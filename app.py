@@ -326,9 +326,9 @@ def residents_form():
            selected_sec = st.selectbox("Vincular à Secretária", list(sec_opts.keys()))
            if selected_sec: sec_id = sec_opts[selected_sec]
 
-       submit = st.form_submit_button("Salvar Morador")
-       
-               if submit:
+	       submit = st.form_submit_button("Salvar Morador")
+	       
+	       if submit:
                    if not name:
                        st.error("Nome é obrigatório.")
                    else:
