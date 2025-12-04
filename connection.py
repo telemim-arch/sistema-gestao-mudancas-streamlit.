@@ -14,7 +14,7 @@ def get_connection():
     """
     try:
         conn = psycopg2.connect(
-            host=st.secrets["postgres"]["host"],
+            host="aws-1-us-east-2.pooler.supabase.com",
             database=st.secrets["postgres"]["database"],
             user=st.secrets["postgres"]["user"],
             password=st.secrets["postgres"]["password"],
