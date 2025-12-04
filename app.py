@@ -254,8 +254,8 @@ def manage_moves():
        use_container_width=True
    )
    
-	   # Save changes back to database
-	   if not df.equals(edited_df):
+   # Save changes back to database
+   if not df.equals(edited_df):
 	       success = True
 	       for index, row in edited_df.iterrows():
 	           # Apenas atualiza se houver mudança real na linha (Streamlit não indica qual linha mudou)
