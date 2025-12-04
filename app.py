@@ -510,7 +510,7 @@ else:
     # Sidebar
     with st.sidebar:
         st.title(f"Olá, {user['name']}")
-        st.caption(f"Cargo: {user['jobTitle']}")
+        st.caption(f"Cargo: {user.get('jobTitle', 'N/A')}")
         
         if st.button("Sair", type="primary"):
             st.session_state.user = None
