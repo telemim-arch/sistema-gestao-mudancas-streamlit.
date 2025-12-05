@@ -205,3 +205,13 @@ def update_move_details(move_id, metragem, status, completionDate=None, completi
     """
     params = (metragem, status, completionDate, completionTime, move_id)
     return execute_query(query, params)
+
+def update_staff_details(staff_id, name, jobTitle, email, role):
+    """Atualiza detalhes editáveis de um funcionário."""
+    query = """
+        UPDATE staff
+        SET name = %s, jobTitle = %s, email = %s, role = %s
+        WHERE id = %s
+    """
+    params = (name, jobTitle, email, role, staff_id)
+    return execute_query(query, params)

@@ -571,9 +571,33 @@ def staff_management():
             use_container_width=True
         )
         
-        # Lógica de salvamento (A ser implementada no connection.py)
-        # if not df[expected_cols].equals(edited_df):
-        #     st.warning("A edição de funcionários ainda não está conectada ao banco de dados.")
+        # Lógica de salvamento
+        if not df[expected_cols].equals(edited_df):
+            try:
+                # Encontra as linhas alteradas
+                diff = edited_df.compare(df[expected_cols])
+                
+                for index in diff.index:
+                    row = edited_df.loc[index]
+                    staff_id = row['id']
+                    name = row['name']
+                    jobTitle = row['jobTitle']
+                    email = row['email']
+                    
+                    # Converte o nome da permissão para a chave (ex: 'Administrador' -> 'ADMIN')
+                    role = next(key for key, value in ROLES.items() if value == row['role'])
+                    
+                    if update_staff_details(staff_id, name, jobTitle, email, role):
+                        st.success(f"Funcionário {name} (ID: {staff_id}) atualizado com sucesso!")
+                    else:
+                        st.error(f"Erro ao atualizar funcionário {name} (ID: {staff_id}).")
+                        
+                # Atualiza o session state após o salvamento
+                st.session_state.data = fetch_all_data()
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Erro ao processar a edição: {e}")
         
     else:
         st.info("Nenhum funcionário encontrado.")
