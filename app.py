@@ -441,10 +441,8 @@ def schedule_form():
 def staff_management():
     st.title("👥 Recursos Humanos")
     
-    tab1, tab2 = st.tabs(["Novo Usuário", "Equipe"])
-    
-    with tab1:
-        with st.form("new_staff"):
+    # Removendo st.tabs para evitar problemas de renderização de formulário
+    with st.form("new_staff"):
             name = st.text_input("Nome Completo")
             email = st.text_input("Login (Email)")
             password = st.text_input("Senha", type="password")
@@ -478,15 +476,15 @@ def staff_management():
                 else:
                     st.error("Nome obrigatório")
 
-    with tab2:
-        scoped_staff = filter_by_scope(st.session_state.data['staff'])
-        df = pd.DataFrame(scoped_staff)
-        if not df.empty:
-            # Hide password for security visual
-            df_display = df[['name', 'jobTitle', 'email', 'role']]
-            st.dataframe(df_display, hide_index=True, use_container_width=True)
-        else:
-            st.info("Nenhum funcionário encontrado.")
+    st.subheader("Equipe Cadastrada")
+    scoped_staff = filter_by_scope(st.session_state.data['staff'])
+    df = pd.DataFrame(scoped_staff)
+    if not df.empty:
+        # Hide password for security visual
+        df_display = df[['name', 'jobTitle', 'email', 'role']]
+        st.dataframe(df_display, hide_index=True, use_container_width=True)
+    else:
+        st.info("Nenhum funcionário encontrado.")
 
 def manage_secretaries():
     st.title("🏢 Gestão de Secretarias")
@@ -539,7 +537,36 @@ if not st.session_state.user:
 else:
     user = st.session_state.user
     
-    # Sidebar
+    # Mapeamento de Opções e Ícones
+    menu_map = {
+        "Gerenciamento": {"icon": "house", "func": dashboard},
+        "Ordens de Serviço": {"icon": "box-seam", "func": manage_moves},
+        "Moradores": {"icon": "person-vcard", "func": residents_form},
+        "Agendamento": {"icon": "calendar-check", "func": schedule_form},
+        "Funcionários": {"icon": "people", "func": staff_management},
+        "Secretarias": {"icon": "building", "func": manage_secretaries},
+        "Cargos": {"icon": "shield-lock", "func": manage_roles},
+    }
+    
+    # Regras de Menu Dinâmico
+    options = ["Gerenciamento", "Ordens de Serviço"]
+    can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
+    
+    if can_schedule:
+        options.extend(["Moradores", "Agendamento"])
+        
+    if user['role'] == 'ADMIN':
+        options.extend(["Funcionários", "Cargos", "Secretarias"])
+    elif user['role'] == 'SECRETARY':
+        options.extend(["Funcionários"]) # Secretária manages her own staff
+        
+    # Criação da Lista de Opções para o Menu Topo (st.selectbox)
+    menu_options = [op for op in options if op in menu_map]
+    
+    # Renderiza o menu no topo
+    choice = st.selectbox("Navegação", menu_options, label_visibility="collapsed")
+    
+    # Sidebar de Usuário
     with st.sidebar:
         st.title(f"Olá, {user['name']}")
         st.caption(f"Cargo: {user.get('jobTitle', 'N/A')}")
@@ -549,35 +576,6 @@ else:
             st.rerun()
             
         st.divider()
-        
-        # Mapeamento de Opções e Ícones
-        menu_map = {
-            "Gerenciamento": {"icon": "house", "func": dashboard},
-            "Ordens de Serviço": {"icon": "box-seam", "func": manage_moves},
-            "Moradores": {"icon": "person-vcard", "func": residents_form},
-            "Agendamento": {"icon": "calendar-check", "func": schedule_form},
-            "Funcionários": {"icon": "people", "func": staff_management},
-            "Secretarias": {"icon": "building", "func": manage_secretaries},
-            "Cargos": {"icon": "shield-lock", "func": manage_roles},
-        }
-        
-        # Regras de Menu Dinâmico
-        options = ["Gerenciamento", "Ordens de Serviço"]
-        can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
-        
-        if can_schedule:
-            options.extend(["Moradores", "Agendamento"])
-            
-        if user['role'] == 'ADMIN':
-            options.extend(["Funcionários", "Cargos", "Secretarias"])
-        elif user['role'] == 'SECRETARY':
-            options.extend(["Funcionários"]) # Secretária manages her own staff
-            
-        # Criação da Lista de Opções e Ícones para st.radio
-        radio_options = [op for op in options if op in menu_map]
-        radio_icons = [menu_map[op]["icon"] for op in radio_options]
-        
-        choice = st.selectbox("Menu", radio_options)
 
     # Router
     if choice == "Gerenciamento":
