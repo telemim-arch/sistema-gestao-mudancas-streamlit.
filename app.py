@@ -422,7 +422,11 @@ def schedule_form():
     
     # Filter lists by scope
     scoped_residents = filter_by_scope(st.session_state.data['residents'])
-    scoped_staff = filter_by_scope(st.session_state.data['staff'])
+    # Admin deve ver todos os funcionários, Secretária apenas os seus
+    if st.session_state.user['role'] == 'ADMIN':
+        scoped_staff = st.session_state.data['staff']
+    else:
+        scoped_staff = filter_by_scope(st.session_state.data['staff'])
     
     if not scoped_residents:
         st.warning("Nenhum morador cadastrado nesta base. Cadastre um morador primeiro.")
@@ -541,7 +545,11 @@ def staff_management():
                     st.error("Nome obrigatório")
 
     st.subheader("Equipe Cadastrada")
-    scoped_staff = filter_by_scope(st.session_state.data['staff'])
+    # Admin deve ver todos os funcionários, Secretária apenas os seus
+    if st.session_state.user['role'] == 'ADMIN':
+        scoped_staff = st.session_state.data['staff']
+    else:
+        scoped_staff = filter_by_scope(st.session_state.data['staff'])
     df = pd.DataFrame(scoped_staff)
     
     # Colunas esperadas
