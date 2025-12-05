@@ -637,6 +637,10 @@ def manage_secretaries():
             else:
                 st.error("Erro ao cadastrar Secretária no banco de dados.")
 
+def reports_page():
+    st.title("📈 Relatórios e Análises")
+    st.info("Funcionalidade em desenvolvimento. Aqui você poderá gerar relatórios de OS, desempenho da equipe e exportar dados.")
+
 def manage_roles():
     st.title("🛡️ Cargos")
     
@@ -669,6 +673,7 @@ else:
         "Funcionários": {"icon": "people", "func": staff_management},
         "Secretarias": {"icon": "building", "func": manage_secretaries},
         "Cargos": {"icon": "shield-lock", "func": manage_roles},
+        "Relatórios": {"icon": "bar-chart-line", "func": reports_page},
     }
     
     # Regras de Menu Dinâmico
@@ -679,7 +684,7 @@ else:
         options.extend(["Moradores", "Agendamento"])
         
     if user['role'] == 'ADMIN':
-        options.extend(["Funcionários", "Cargos", "Secretarias"])
+        options.extend(["Funcionários", "Cargos", "Secretarias", "Relatórios"])
     elif user['role'] == 'SECRETARY':
         options.extend(["Funcionários"]) # Secretária manages her own staff
         
@@ -698,8 +703,8 @@ else:
             
         st.divider()
         
-    # Renderiza o menu no topo com st.tabs
-    tabs = st.tabs([f":{menu_map[op]['icon']}: {op}" for op in menu_options])
+    # Renderiza o menu no topo com st.tabs (apenas ícones)
+    tabs = st.tabs([f":{menu_map[op]['icon']}:" for op in menu_options])
     
     # Router (usando o índice das abas)
     for i, choice in enumerate(menu_options):
