@@ -616,7 +616,8 @@ def manage_secretaries():
         name = st.text_input("Nome da Secretaria / Base")
         submit = st.form_submit_button("Criar Base")
         
-        if submit and name:
+	        if submit:
+	            if name:
             login = name.lower().replace(" ", "") + "@telemim.com"
             # Para Secretária, o secretaryId é o próprio ID (auto-referência)
             # Como o ID é gerado pelo DB, vamos inserir sem o ID e depois atualizar o session state
@@ -649,7 +650,8 @@ def manage_roles():
         perm = st.selectbox("Permissão do Sistema", list(ROLES.values()))
         submit = st.form_submit_button("Salvar Cargo")
         
-        if submit and name:
+	        if submit:
+	            if name:
             # Find key by value
             perm_key = next(key for key, value in ROLES.items() if value == perm)
             st.session_state.data['roles'].append({'id': int(time.time()), 'name': name, 'permission': perm_key})
