@@ -466,9 +466,15 @@ def staff_management():
             sec_id = None
             if user['role'] == 'ADMIN':
                 secs = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
-                sec_map = {s['branchName']: s['id'] for s in secs}
-                sec_name = st.selectbox("Vincular à Secretária", list(sec_map.keys()))
-                if sec_name: sec_id = sec_map[sec_name]
+                
+                # Corrigindo o KeyError: Usar o nome da secretária se branchName for None
+                sec_options = {}
+                for s in secs:
+                    key = s.get('branchName') or s['name']
+                    sec_options[key] = s['id']
+                    
+                sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
+                if sec_name: sec_id = sec_options[sec_name]
             else:
                 sec_id = user['id'] # Self link for secretary
 
