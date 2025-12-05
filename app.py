@@ -539,53 +539,59 @@ if not st.session_state.user:
 else:
     user = st.session_state.user
     
-    # Cabeçalho e Menu de Navegação no Topo
-    st.sidebar.title(f"Olá, {user['name']}")
-    st.sidebar.caption(f"Cargo: {user.get('jobTitle', 'N/A')}")
-    
-    if st.sidebar.button("Sair", type="primary"):
-        st.session_state.user = None
-        st.rerun()
+    # Sidebar
+    with st.sidebar:
+        st.title(f"Olá, {user['name']}")
+        st.caption(f"Cargo: {user.get('jobTitle', 'N/A')}")
         
-    st.sidebar.divider()
-    
-    # Mapeamento de Opções e Ícones
-    menu_map = {
-        "Gerenciamento": {"icon": "house", "func": dashboard},
-        "Ordens de Serviço": {"icon": "box-seam", "func": manage_moves},
-        "Moradores": {"icon": "person-vcard", "func": residents_form},
-        "Agendamento": {"icon": "calendar-check", "func": schedule_form},
-        "Funcionários": {"icon": "people", "func": staff_management},
-        "Secretarias": {"icon": "building", "func": manage_secretaries},
-        "Cargos": {"icon": "shield-lock", "func": manage_roles},
-    }
-    
-    # Regras de Menu Dinâmico
-    options = ["Gerenciamento", "Ordens de Serviço"]
-    can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
-    
-    if can_schedule:
-        options.extend(["Moradores", "Agendamento"])
+        if st.button("Sair", type="primary"):
+            st.session_state.user = None
+            st.rerun()
+            
+        st.divider()
         
-    if user['role'] == 'ADMIN':
-        options.extend(["Funcionários", "Cargos", "Secretarias"])
-    elif user['role'] == 'SECRETARY':
-        options.extend(["Funcionários"]) # Secretária manages her own staff
+        # Mapeamento de Opções e Ícones
+        menu_map = {
+            "Gerenciamento": {"icon": "house", "func": dashboard},
+            "Ordens de Serviço": {"icon": "box-seam", "func": manage_moves},
+            "Moradores": {"icon": "person-vcard", "func": residents_form},
+            "Agendamento": {"icon": "calendar-check", "func": schedule_form},
+            "Funcionários": {"icon": "people", "func": staff_management},
+            "Secretarias": {"icon": "building", "func": manage_secretaries},
+            "Cargos": {"icon": "shield-lock", "func": manage_roles},
+        }
         
-    # Criação do Menu de Abas no Topo
-    tabs_list = [op for op in options if op in menu_map]
-    icons_list = [menu_map[op]["icon"] for op in tabs_list]
-    
-    # Adiciona um estado para a aba ativa, se não existir
-    if 'active_tab' not in st.session_state:
-        st.session_state.active_tab = tabs_list[0]
+        # Regras de Menu Dinâmico
+        options = ["Gerenciamento", "Ordens de Serviço"]
+        can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
         
-    # Usando st.tabs para o menu no topo
-    tabs = st.tabs(tabs_list)
-    
-    # Roteamento baseado na aba ativa
-    for i, tab_name in enumerate(tabs_list):
-        with tabs[i]:
-            # Executa a função da tela correspondente
-            menu_map[tab_name]["func"]()
+        if can_schedule:
+            options.extend(["Moradores", "Agendamento"])
+            
+        if user['role'] == 'ADMIN':
+            options.extend(["Funcionários", "Cargos", "Secretarias"])
+        elif user['role'] == 'SECRETARY':
+            options.extend(["Funcionários"]) # Secretária manages her own staff
+            
+        # Criação da Lista de Opções e Ícones para st.radio
+        radio_options = [op for op in options if op in menu_map]
+        radio_icons = [menu_map[op]["icon"] for op in radio_options]
+        
+        choice = st.radio("Menu", radio_options, icons=radio_icons)
+
+    # Router
+    if choice == "Gerenciamento":
+        dashboard()
+    elif choice == "Ordens de Serviço":
+        manage_moves()
+    elif choice == "Moradores":
+        residents_form()
+    elif choice == "Agendamento":
+        schedule_form()
+    elif choice == "Funcionários":
+        staff_management()
+    elif choice == "Secretarias":
+        manage_secretaries()
+    elif choice == "Cargos":
+        manage_roles()
 
