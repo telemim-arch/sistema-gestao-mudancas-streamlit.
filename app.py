@@ -396,26 +396,30 @@ def residents_form():
             selected_sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
             if selected_sec_name: sec_id = sec_options[selected_sec_name]
 
-        submit = st.form_submit_button("Salvar Morador")
-        
-        if submit:
-            if not name:
-                st.error("Nome é obrigatório.")
-            else:
-                # O campo 'id' é gerado automaticamente pelo DB
-                new_res = {
-                    'name': name, 'selo': selo, 'contact': contact,
-                    'originAddress': orig_addr, 'originNumber': orig_num, 'originNeighborhood': orig_bairro,
-                    'destAddress': dest_addr, 'destNumber': dest_num, 'destNeighborhood': dest_bairro,
-                    'observation': obs, 'moveDate': str(move_date), 'moveTime': str(move_time),
-                    'secretaryId': sec_id
-                }
-                if insert_resident(new_res):
-                    # Atualiza o session state após a inserção no DB
-                    st.session_state.data = fetch_all_data()
-                    st.success("Morador cadastrado com sucesso!")
-                else:
-                    st.error("Erro ao cadastrar morador no banco de dados.")
+	        submit = st.form_submit_button("Salvar Morador")
+	        
+	        if submit:
+	            if not name:
+	                st.error("Nome é obrigatório.")
+	            else:
+	                # Confirmação de Ação
+	                if st.session_state.user['role'] != 'ADMIN' or st.confirm("Tem certeza que deseja cadastrar este Morador?"):
+	                    # O campo 'id' é gerado automaticamente pelo DB
+	                    new_res = {
+	                        'name': name, 'selo': selo, 'contact': contact,
+	                        'originAddress': orig_addr, 'originNumber': orig_num, 'originNeighborhood': orig_bairro,
+	                        'destAddress': dest_addr, 'destNumber': dest_num, 'destNeighborhood': dest_bairro,
+	                        'observation': obs, 'moveDate': str(move_date), 'moveTime': str(move_time),
+	                        'secretaryId': sec_id
+	                    }
+	                    if insert_resident(new_res):
+	                        # Atualiza o session state após a inserção no DB
+	                        st.session_state.data = fetch_all_data()
+	                        st.success("Morador cadastrado com sucesso!")
+	                    else:
+	                        st.error("Erro ao cadastrar morador no banco de dados.")
+	                else:
+	                    st.warning("Cadastro cancelado.")
 
 def schedule_form():
     st.title("🗓️ Agendamento de OS")
@@ -475,27 +479,33 @@ def schedule_form():
         submit = st.form_submit_button("Confirmar Agendamento")
         
         if submit:
-            if not res_name or not sup_name or not drive_name:
-                st.error("Selecione o Morador, Supervisor e Motorista.")
-            else:
-                resident_id = res_map[res_name]
-                supervisor_id = sup_map[sup_name]
-                driver_id = drive_map.get(drive_name)
-                coordinator_id = coord_map.get(coord_name)
-                
-                new_move = {
-                    'residentId': resident_id, 'date': str(date), 'time': str(time_val),
-                    'metragem': 0.0, # Metragem inicial é 0.0, será atualizada no manage_moves
-                    'supervisorId': supervisor_id, 'coordinatorId': coordinator_id,
-                    'driverId': driver_id, 'status': 'A realizar', 'secretaryId': sec_id, # sec_id garantido como não-NULL
-                    'completionDate': None, 'completionTime': None
-                }
-                if insert_move(new_move):
-                    # Atualiza o session state após a inserção no DB
-                    st.session_state.data = fetch_all_data()
-                    st.success("Ordem de Serviço agendada com sucesso!")
-                else:
-                    st.error("Erro ao agendar Ordem de Serviço no banco de dados.")
+ 	        submit = st.form_submit_button("Confirmar Agendamento")
+	        
+	        if submit:
+	            if not res_name or not sup_name:
+	                st.error("Selecione o Morador e o Supervisor.")
+	            else:
+	                # Confirmação de Ação
+	                if st.session_state.user['role'] != 'ADMIN' or st.confirm("Tem certeza que deseja agendar esta Ordem de Serviço?"):
+	                    resident_id = res_map[res_name]
+	                    supervisor_id = sup_map[sup_name]
+	                    driver_id = drive_map.get(drive_name)
+	                    coordinator_id = coord_map.get(coord_name)
+	                    
+	                    new_move = {
+	                        'residentId': resident_id, 'date': str(date), 'time': str(time_val),
+	                        'metragem': 0.0, # Metragem inicial é 0.0, será atualizada no manage_moves
+	                        'supervisorId': supervisor_id, 'coordinatorId': coordinator_id,
+	                        'driverId': driver_id, 'status': 'A realizar', 'secretaryId': sec_id, # sec_id garantido como não-NULL
+	                    }
+	                    
+	                    if insert_move(new_move):
+	                        st.session_state.data = fetch_all_data()
+	                        st.success("Ordem de Serviço agendada com sucesso!")
+	                    else:
+	                        st.error("Erro ao agendar Ordem de Serviço no banco de dados.")
+	                else:
+	                    st.warning("Agendamento cancelado.").")
 
 def staff_management():
     st.title("👥 Recursos Humanos")
