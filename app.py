@@ -547,7 +547,7 @@ def manage_secretaries():
                 
                 # Encontrar o ID da secretária recém-criada para atualizar o secretaryId (self-reference)
                 new_sec = next((s for s in st.session_state.data['staff'] if s['email'] == login), None)
-                if new_sec and new_sec['secretaryId'] is None:
+                if new_sec and new_sec.get('secretaryId') is None:
                     # ATENÇÃO: A função insert_staff não permite UPDATE. 
                     # Para simplificar, vamos aceitar que o secretaryId da Secretária seja NULL por enquanto,
                     # e o escopo será tratado pelo `filter_by_scope` que verifica `item.get('id') == str(scope)`.
