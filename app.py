@@ -448,33 +448,53 @@ def schedule_form():
         
         sup_name = st.selectbox("Supervisor (Obrigatório)", list(sup_map.keys()) if sup_map else [])
         coord_name = st.selectbox("Coordenador", ["Nenhum"] + list(coord_map.keys()))
-        drive_name = st.selectbox("Motorista", ["Nenhum"] + list(drive_map.keys()))
-        
-        submit = st.form_submit_button("Confirmar Agendamento")
-        
-        if submit:
-            if not res_name or not sup_name or not drive_name:
-                st.error("Selecione o Morador, Supervisor e Motorista.")
-            else:
-                resident_id = res_map[res_name]
-                supervisor_id = sup_map[sup_name]
-                driver_id = drive_map.get(drive_name)
-                coordinator_id = coord_map.get(coord_name)
-                sec_id = get_current_scope_id()
-                
-                new_move = {
-                    'residentId': resident_id, 'date': str(date), 'time': str(time_val),
-                    'metragem': 0.0, # Metragem inicial é 0.0, será atualizada no manage_moves
-                    'supervisorId': supervisor_id, 'coordinatorId': coordinator_id,
-                    'driverId': driver_id, 'status': 'A realizar', 'secretaryId': sec_id,
-                    'completionDate': None, 'completionTime': None
-                }
-                if insert_move(new_move):
-                    # Atualiza o session state após a inserção no DB
-                    st.session_state.data = fetch_all_data()
-                    st.success("Ordem de Serviço agendada com sucesso!")
-                else:
-                    st.error("Erro ao agendar Ordem de Serviço no banco de dados.")
+	        drive_name = st.selectbox("Motorista", ["Nenhum"] + list(drive_map.keys()))
+	        
+	        # Lógica de seleção de Secretária para Admin (para garantir que sec_id não seja NULL)
+	        user = st.session_state.user
+	        sec_id = get_current_scope_id()
+	        
+	        if user['role'] == 'ADMIN':
+	            secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
+	            
+	            # Corrigindo o KeyError: Usar o nome da secretária se branchName for None
+	            sec_options = {}
+	            for s in secretaries:
+	                key = s.get('branchName') or s['name']
+	                sec_options[key] = s['id']
+	                
+	            selected_sec_name = st.selectbox("Vincular à Secretária (Admin)", list(sec_options.keys()))
+	            if selected_sec_name: sec_id = sec_options[selected_sec_name]
+	            
+	        # Validação final para garantir que sec_id não seja None
+	        if sec_id is None:
+	            st.error("Erro: O ID da Secretária não foi definido. O Admin deve selecionar uma Secretária.")
+	            return
+	        
+	        submit = st.form_submit_button("Confirmar Agendamento")
+	        
+	        if submit:
+	            if not res_name or not sup_name or not drive_name:
+	                st.error("Selecione o Morador, Supervisor e Motorista.")
+	            else:
+	                resident_id = res_map[res_name]
+	                supervisor_id = sup_map[sup_name]
+	                driver_id = drive_map.get(drive_name)
+	                coordinator_id = coord_map.get(coord_name)
+	                
+	                new_move = {
+	                    'residentId': resident_id, 'date': str(date), 'time': str(time_val),
+	                    'metragem': 0.0, # Metragem inicial é 0.0, será atualizada no manage_moves
+	                    'supervisorId': supervisor_id, 'coordinatorId': coordinator_id,
+	                    'driverId': driver_id, 'status': 'A realizar', 'secretaryId': sec_id, # sec_id garantido como não-NULL
+	                    'completionDate': None, 'completionTime': None
+	                }
+	                if insert_move(new_move):
+	                    # Atualiza o session state após a inserção no DB
+	                    st.session_state.data = fetch_all_data()
+	                    st.success("Ordem de Serviço agendada com sucesso!")
+	                else:
+	                    st.error("Erro ao agendar Ordem de Serviço no banco de dados.")
 
 def staff_management():
     st.title("👥 Recursos Humanos")
@@ -525,12 +545,34 @@ def staff_management():
     df = pd.DataFrame(scoped_staff)
     
     # Colunas esperadas
-    expected_cols = ['name', 'jobTitle', 'email', 'role']
+    expected_cols = ['id', 'name', 'jobTitle', 'email', 'role']
     
     if not df.empty and all(col in df.columns for col in expected_cols):
-        # Hide password for security visual
-        df_display = df[expected_cols]
-        st.dataframe(df_display, hide_index=True, use_container_width=True)
+        # Configurações de edição
+        column_config = {
+            "id": st.column_config.Column("ID", disabled=True),
+            "name": st.column_config.TextColumn("Nome", required=True),
+            "jobTitle": st.column_config.TextColumn("Cargo", required=True),
+            "email": st.column_config.TextColumn("Email", required=True),
+            "role": st.column_config.SelectboxColumn(
+                "Permissão",
+                options=list(ROLES.values()),
+                required=True,
+            ),
+        }
+        
+        # Edit Mode
+        edited_df = st.data_editor(
+            df[expected_cols],
+            column_config=column_config,
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        # Lógica de salvamento (A ser implementada no connection.py)
+        # if not df[expected_cols].equals(edited_df):
+        #     st.warning("A edição de funcionários ainda não está conectada ao banco de dados.")
+        
     else:
         st.info("Nenhum funcionário encontrado.")
 
