@@ -422,11 +422,8 @@ def schedule_form():
     
     # Filter lists by scope
     scoped_residents = filter_by_scope(st.session_state.data['residents'])
-    # Admin deve ver todos os funcionários, Secretária apenas os seus
-    if st.session_state.user['role'] == 'ADMIN':
-        scoped_staff = st.session_state.data['staff']
-    else:
-        scoped_staff = filter_by_scope(st.session_state.data['staff'])
+    # O filtro de escopo já está na função filter_by_scope, vamos usá-la
+    scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id') # Filtra por ID do funcionário para o Admin ver todos
     
     if not scoped_residents:
         st.warning("Nenhum morador cadastrado nesta base. Cadastre um morador primeiro.")
@@ -545,11 +542,8 @@ def staff_management():
                     st.error("Nome obrigatório")
 
     st.subheader("Equipe Cadastrada")
-    # Admin deve ver todos os funcionários, Secretária apenas os seus
-    if st.session_state.user['role'] == 'ADMIN':
-        scoped_staff = st.session_state.data['staff']
-    else:
-        scoped_staff = filter_by_scope(st.session_state.data['staff'])
+    # O filtro de escopo já está na função filter_by_scope, vamos usá-la
+    scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id') # Filtra por ID do funcionário para o Admin ver todos
     df = pd.DataFrame(scoped_staff)
     
     # Colunas esperadas
@@ -658,11 +652,9 @@ else:
     elif user['role'] == 'SECRETARY':
         options.extend(["Funcionários"]) # Secretária manages her own staff
         
-    # Criação da Lista de Opções para o Menu Topo (st.selectbox)
+    # Criação da Lista de Opções para o Menu Topo (st.tabs)
     menu_options = [op for op in options if op in menu_map]
-    
-    # Renderiza o menu no topo
-    choice = st.selectbox("Navegação", menu_options, label_visibility="collapsed")
+    menu_icons = [menu_map[op]['icon'] for op in menu_options]
     
     # Sidebar de Usuário
     with st.sidebar:
@@ -674,20 +666,12 @@ else:
             st.rerun()
             
         st.divider()
-
-    # Router
-    if choice == "Gerenciamento":
-        dashboard()
-    elif choice == "Ordens de Serviço":
-        manage_moves()
-    elif choice == "Moradores":
-        residents_form()
-    elif choice == "Agendamento":
-        schedule_form()
-    elif choice == "Funcionários":
-        staff_management()
-    elif choice == "Secretarias":
-        manage_secretaries()
-    elif choice == "Cargos":
-        manage_roles()
+        
+    # Renderiza o menu no topo com st.tabs
+    tabs = st.tabs([f":{menu_map[op]['icon']}: {op}" for op in menu_options])
+    
+    # Router (usando o índice das abas)
+    for i, choice in enumerate(menu_options):
+        with tabs[i]:
+            menu_map[choice]['func']()
 
