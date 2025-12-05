@@ -523,9 +523,13 @@ def staff_management():
     st.subheader("Equipe Cadastrada")
     scoped_staff = filter_by_scope(st.session_state.data['staff'])
     df = pd.DataFrame(scoped_staff)
-    if not df.empty:
+    
+    # Colunas esperadas
+    expected_cols = ['name', 'jobTitle', 'email', 'role']
+    
+    if not df.empty and all(col in df.columns for col in expected_cols):
         # Hide password for security visual
-        df_display = df[['name', 'jobTitle', 'email', 'role']]
+        df_display = df[expected_cols]
         st.dataframe(df_display, hide_index=True, use_container_width=True)
     else:
         st.info("Nenhum funcionário encontrado.")
