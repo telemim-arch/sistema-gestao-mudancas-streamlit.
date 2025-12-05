@@ -577,7 +577,7 @@ else:
         radio_options = [op for op in options if op in menu_map]
         radio_icons = [menu_map[op]["icon"] for op in radio_options]
         
-        choice = st.radio("Menu", radio_options, icons=radio_icons)
+        choice = st.selectbox("Menu", radio_options)
 
     # Router
     if choice == "Gerenciamento":
