@@ -612,33 +612,30 @@ def staff_management():
 def manage_secretaries():
     st.title("🏢 Gestão de Secretarias")
     
-    with st.form("new_sec"):
-        name = st.text_input("Nome da Secretaria / Base")
-        submit = st.form_submit_button("Criar Base")
-        
-	        if submit:
-	            if name:
-	                login = name.lower().replace(" ", "") + "@telemim.com"
-	                # Para Secretária, o secretaryId é o próprio ID (auto-referência)
-	                # Como o ID é gerado pelo DB, vamos inserir sem o ID e depois atualizar o session state
-	                if insert_staff(name, login, '123', 'SECRETARY', 'Secretária', None, name):
-	                    # Re-fetch para obter o ID gerado e atualizar o session state
-	                    st.session_state.data = fetch_all_data()
-	                    
-	                    # Encontrar o ID da secretária recém-criada para atualizar o secretaryId (self-reference)
-	                    new_sec = next((s for s in st.session_state.data['staff'] if s['email'] == login), None)
-	                    if new_sec and new_sec.get('secretaryId') is None:
-	                        # ATENÇÃO: A função insert_staff não permite UPDATE. 
-	                        # Para simplificar, vamos aceitar que o secretaryId da Secretária seja NULL por enquanto,
-	                        # e o escopo será tratado pelo `filter_by_scope` que verifica `item.get('id') == str(scope)`.
-	                        # Em um sistema real, seria necessário um UPDATE SQL para self-reference.
-	                        st.success(f"Criado! Login automático: {login} / Senha: 123. (Lembre-se de configurar o secretaryId no DB se necessário para escopo)")
-	                    else:
-	                        st.success(f"Criado! Login automático: {login} / Senha: 123.")
-	                else:
-	                    st.error("Erro ao cadastrar Secretária no banco de dados.")
-	            else:
-	                st.error("Nome da Secretaria / Base é obrigatório.")
+    name = st.text_input("Nome da Secretaria / Base")
+    if st.button("Criar Base"):
+        if name:
+            login = name.lower().replace(" ", "") + "@telemim.com"
+            # Para Secretária, o secretaryId é o próprio ID (auto-referência)
+            # Como o ID é gerado pelo DB, vamos inserir sem o ID e depois atualizar o session state
+            if insert_staff(name, login, '123', 'SECRETARY', 'Secretária', None, name):
+                # Re-fetch para obter o ID gerado e atualizar o session state
+                st.session_state.data = fetch_all_data()
+                
+                # Encontrar o ID da secretária recém-criada para atualizar o secretaryId (self-reference)
+                new_sec = next((s for s in st.session_state.data['staff'] if s['email'] == login), None)
+                if new_sec and new_sec.get('secretaryId') is None:
+                    # ATENÇÃO: A função insert_staff não permite UPDATE. 
+                    # Para simplificar, vamos aceitar que o secretaryId da Secretária seja NULL por enquanto,
+                    # e o escopo será tratado pelo `filter_by_scope` que verifica `item.get('id') == str(scope)`.
+                    # Em um sistema real, seria necessário um UPDATE SQL para self-reference.
+                    st.success(f"Criado! Login automático: {login} / Senha: 123. (Lembre-se de configurar o secretaryId no DB se necessário para escopo)")
+                else:
+                    st.success(f"Criado! Login automático: {login} / Senha: 123.")
+            else:
+                st.error("Erro ao cadastrar Secretária no banco de dados.")
+        else:
+            st.error("Nome da Secretaria / Base é obrigatório.")
 
 def reports_page():
     st.title("📈 Relatórios e Análises")
