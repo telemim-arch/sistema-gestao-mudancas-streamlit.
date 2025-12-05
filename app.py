@@ -181,27 +181,53 @@ def dashboard():
     
     # KPIs
     col1, col2, col3 = st.columns(3)
+    
+    # Contagem de Status
     todo = len([m for m in moves if m['status'] == 'A realizar'])
     doing = len([m for m in moves if m['status'] == 'Realizando'])
     done = len([m for m in moves if m['status'] == 'Concluído'])
     
-    col1.metric("A Realizar", todo, delta_color="off")
-    col2.metric("Realizando", doing, delta_color="off")
-    col3.metric("Concluídas", done, delta_color="normal")
-    
+    # Inicializa o filtro de status na sessão
+    if 'dashboard_filter_status' not in st.session_state:
+        st.session_state.dashboard_filter_status = "Todos"
+        
+    # Função para mudar o filtro ao clicar no card
+    def set_filter(status):
+        st.session_state.dashboard_filter_status = status
+        
+    # Cards Interativos (Usando st.button com HTML/CSS para simular cards)
+    with col1:
+        if st.button(f"**A Realizar**\n\n# {todo}", key="kpi_todo", use_container_width=True):
+            set_filter("A realizar")
+    with col2:
+        if st.button(f"**Realizando**\n\n# {doing}", key="kpi_doing", use_container_width=True):
+            set_filter("Realizando")
+    with col3:
+        if st.button(f"**Concluídas**\n\n# {done}", key="kpi_done", use_container_width=True):
+            set_filter("Concluído")
+            
     st.divider()
     
     # Filtros
     st.subheader("🔎 Buscar Mudanças")
     c1, c2, c3 = st.columns(3)
     f_name = c1.text_input("Nome do Cliente")
-    f_status = c2.selectbox("Status", ["Todos", "A realizar", "Realizando", "Concluído"])
+    
+    # O filtro de status agora usa o valor da sessão (que pode ter sido alterado pelos cards)
+    f_status = c2.selectbox("Status", ["Todos", "A realizar", "Realizando", "Concluído"], 
+                            index=["Todos", "A realizar", "Realizando", "Concluído"].index(st.session_state.dashboard_filter_status),
+                            key="status_selectbox")
+    
+    # Atualiza o filtro da sessão se o selectbox for alterado manualmente
+    if f_status != st.session_state.dashboard_filter_status:
+        st.session_state.dashboard_filter_status = f_status
+        
     f_date = c3.date_input("Data", value=None)
     
     # Aplicar Filtros
     filtered = moves
-    if f_status != "Todos":
-        filtered = [m for m in filtered if m['status'] == f_status]
+    if st.session_state.dashboard_filter_status != "Todos":
+        filtered = [m for m in filtered if m['status'] == st.session_state.dashboard_filter_status]
     if f_date:
         filtered = [m for m in filtered if m['date'] == str(f_date)]
     if f_name:
@@ -210,9 +236,15 @@ def dashboard():
     # Exibir Tabela Simplificada
     if filtered:
         df = pd.DataFrame(filtered)
-        df['Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
-        df_display = df[['id', 'date', 'Cliente', 'status', 'metragem']]
-        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        
+        # Verifica se o DataFrame tem colunas antes de tentar acessá-las
+        if 'residentId' in df.columns:
+            df['Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
+            df_display = df[['id', 'date', 'Cliente', 'status', 'metragem']]
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+        else:
+            # Isso só deve acontecer se filtered for uma lista de dicionários vazios, o que é um caso limite
+            st.warning("Nenhuma mudança encontrada com esses filtros.")
     else:
         st.warning("Nenhuma mudança encontrada com esses filtros.")
 
@@ -507,44 +539,53 @@ if not st.session_state.user:
 else:
     user = st.session_state.user
     
-    # Sidebar
-    with st.sidebar:
-        st.title(f"Olá, {user['name']}")
-        st.caption(f"Cargo: {user.get('jobTitle', 'N/A')}")
+    # Cabeçalho e Menu de Navegação no Topo
+    st.sidebar.title(f"Olá, {user['name']}")
+    st.sidebar.caption(f"Cargo: {user.get('jobTitle', 'N/A')}")
+    
+    if st.sidebar.button("Sair", type="primary"):
+        st.session_state.user = None
+        st.rerun()
         
-        if st.button("Sair", type="primary"):
-            st.session_state.user = None
-            st.rerun()
-            
-        st.divider()
+    st.sidebar.divider()
+    
+    # Mapeamento de Opções e Ícones
+    menu_map = {
+        "Gerenciamento": {"icon": "house", "func": dashboard},
+        "Ordens de Serviço": {"icon": "box-seam", "func": manage_moves},
+        "Moradores": {"icon": "person-vcard", "func": residents_form},
+        "Agendamento": {"icon": "calendar-check", "func": schedule_form},
+        "Funcionários": {"icon": "people", "func": staff_management},
+        "Secretarias": {"icon": "building", "func": manage_secretaries},
+        "Cargos": {"icon": "shield-lock", "func": manage_roles},
+    }
+    
+    # Regras de Menu Dinâmico
+    options = ["Gerenciamento", "Ordens de Serviço"]
+    can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
+    
+    if can_schedule:
+        options.extend(["Moradores", "Agendamento"])
         
-        # Menu dinâmico
-        options = ["Gerenciamento", "Ordens de Serviço"]
+    if user['role'] == 'ADMIN':
+        options.extend(["Funcionários", "Cargos", "Secretarias"])
+    elif user['role'] == 'SECRETARY':
+        options.extend(["Funcionários"]) # Secretária manages her own staff
         
-        # Regras de Menu
-        can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
-        if can_schedule:
-            options.extend(["Moradores", "Agendamento"])
-            
-        if user['role'] == 'ADMIN':
-            options.extend(["Funcionários", "Cargos", "Secretarias"])
-        elif user['role'] == 'SECRETARY':
-            options.extend(["Funcionários"]) # Secretária manages her own staff
-            
-        choice = st.radio("Menu", options)
+    # Criação do Menu de Abas no Topo
+    tabs_list = [op for op in options if op in menu_map]
+    icons_list = [menu_map[op]["icon"] for op in tabs_list]
+    
+    # Adiciona um estado para a aba ativa, se não existir
+    if 'active_tab' not in st.session_state:
+        st.session_state.active_tab = tabs_list[0]
+        
+    # Usando st.tabs para o menu no topo
+    tabs = st.tabs(tabs_list)
+    
+    # Roteamento baseado na aba ativa
+    for i, tab_name in enumerate(tabs_list):
+        with tabs[i]:
+            # Executa a função da tela correspondente
+            menu_map[tab_name]["func"]()
 
-    # Router
-    if choice == "Gerenciamento":
-        dashboard()
-    elif choice == "Ordens de Serviço":
-        manage_moves()
-    elif choice == "Moradores":
-        residents_form()
-    elif choice == "Agendamento":
-        schedule_form()
-    elif choice == "Funcionários":
-        staff_management()
-    elif choice == "Secretarias":
-        manage_secretaries()
-    elif choice == "Cargos":
-        manage_roles()
