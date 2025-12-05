@@ -352,11 +352,21 @@ def residents_form():
         user = st.session_state.user
         sec_id = get_current_scope_id()
         
+        # Admin select secretary logic
+        user = st.session_state.user
+        sec_id = get_current_scope_id()
+        
         if user['role'] == 'ADMIN':
             secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
-            sec_opts = {s['branchName']: s['id'] for s in secretaries}
-            selected_sec = st.selectbox("Vincular à Secretária", list(sec_opts.keys()))
-            if selected_sec: sec_id = sec_opts[selected_sec]
+            
+            # Corrigindo o KeyError: Usar o nome da secretária se branchName for None
+            sec_options = {}
+            for s in secretaries:
+                key = s.get('branchName') or s['name']
+                sec_options[key] = s['id']
+                
+            selected_sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
+            if selected_sec_name: sec_id = sec_options[selected_sec_name]
 
         submit = st.form_submit_button("Salvar Morador")
         
