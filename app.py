@@ -476,36 +476,33 @@ def schedule_form():
             st.error("Erro: O ID da Secretária não foi definido. O Admin deve selecionar uma Secretária.")
             return
         
-        submit = st.form_submit_button("Confirmar Agendamento")
-        
-        if submit:
-             submit = st.form_submit_button("Confirmar Agendamento")
-            
-            if submit:
-                if not res_name or not sup_name:
-                    st.error("Selecione o Morador e o Supervisor.")
-                else:
-                    # Confirmação de Ação
-                    if st.session_state.user['role'] != 'ADMIN' or st.confirm("Tem certeza que deseja agendar esta Ordem de Serviço?"):
-                        resident_id = res_map[res_name]
-                        supervisor_id = sup_map[sup_name]
-                        driver_id = drive_map.get(drive_name)
-                        coordinator_id = coord_map.get(coord_name)
-                        
-                        new_move = {
-                            'residentId': resident_id, 'date': str(date), 'time': str(time_val),
-                            'metragem': 0.0, # Metragem inicial é 0.0, será atualizada no manage_moves
-                            'supervisorId': supervisor_id, 'coordinatorId': coordinator_id,
-                            'driverId': driver_id, 'status': 'A realizar', 'secretaryId': sec_id, # sec_id garantido como não-NULL
-                        }
-                        
-                        if insert_move(new_move):
-                            st.session_state.data = fetch_all_data()
-                            st.success("Ordem de Serviço agendada com sucesso!")
-                        else:
-                            st.error("Erro ao agendar Ordem de Serviço no banco de dados.")
-                    else:
-                        st.warning("Agendamento cancelado.").")
+	        submit = st.form_submit_button("Confirmar Agendamento")
+	        
+	        if submit:
+	            if not res_name or not sup_name:
+	                st.error("Selecione o Morador e o Supervisor.")
+	            else:
+	                # Confirmação de Ação
+	                if st.session_state.user['role'] != 'ADMIN' or st.confirm("Tem certeza que deseja agendar esta Ordem de Serviço?"):
+	                    resident_id = res_map[res_name]
+	                    supervisor_id = sup_map[sup_name]
+	                    driver_id = drive_map.get(drive_name)
+	                    coordinator_id = coord_map.get(coord_name)
+	                    
+	                    new_move = {
+	                        'residentId': resident_id, 'date': str(date), 'time': str(time_val),
+	                        'metragem': 0.0, # Metragem inicial é 0.0, será atualizada no manage_moves
+	                        'supervisorId': supervisor_id, 'coordinatorId': coordinator_id,
+	                        'driverId': driver_id, 'status': 'A realizar', 'secretaryId': sec_id, # sec_id garantido como não-NULL
+	                    }
+	                    
+	                    if insert_move(new_move):
+	                        st.session_state.data = fetch_all_data()
+	                        st.success("Ordem de Serviço agendada com sucesso!")
+	                    else:
+	                        st.error("Erro ao agendar Ordem de Serviço no banco de dados.")
+	                else:
+	                    st.warning("Agendamento cancelado.")
 
 def staff_management():
     st.title("👥 Recursos Humanos")
