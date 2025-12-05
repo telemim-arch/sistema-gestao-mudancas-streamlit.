@@ -260,12 +260,14 @@ def manage_moves():
     # Convert to DataFrame for editing
     df = pd.DataFrame(moves)
     
-    # Helper columns for display
-    df['Nome Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
-    df['Supervisor'] = df['supervisorId'].apply(lambda x: get_name_by_id(st.session_state.data['staff'], x))
-    
-    # Edit Mode
-    edited_df = st.data_editor(
+    # Verifica se o DataFrame tem colunas antes de tentar acessá-las
+    if not df.empty and 'residentId' in df.columns:
+        # Helper columns for display
+        df['Nome Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
+        df['Supervisor'] = df['supervisorId'].apply(lambda x: get_name_by_id(st.session_state.data['staff'], x))
+        
+        # Edit Mode
+        edited_df = st.data_editor(
         df,
         column_config={
             "id": st.column_config.NumberColumn("OS #", disabled=True),
@@ -287,37 +289,63 @@ def manage_moves():
     )
     
     # Save changes back to database
-    if not df.equals(edited_df):
-        success = True
-        for index, row in edited_df.iterrows():
-            # Apenas atualiza se houver mudança real na linha (Streamlit não indica qual linha mudou)
-            original_row = df.loc[index]
-            
-            # Verifica se a linha foi modificada (comparando colunas editáveis)
-            editable_cols = ['date', 'time', 'status', 'metragem', 'completionDate', 'completionTime']
-            modified = any(original_row[col] != row[col] for col in editable_cols)
-            
-            if modified:
-                # Converte data e hora para string ou None
-                completion_date = str(row['completionDate']) if pd.notna(row['completionDate']) else None
-                completion_time = str(row['completionTime']) if pd.notna(row['completionTime']) else None
-                
-                # Usando a função update_move_details que criamos no connection.py
-                if not update_move_details(
-                    move_id=row['id'],
-                    metragem=row['metragem'],
-                    status=row['status'],
-                    completionDate=completion_date,
-                    completionTime=completion_time
-                ):
-                    success = False
-                    st.error(f"Erro ao atualizar OS #{row['id']} no banco de dados.")
-                    break
+    if not df.empty and 'residentId' in df.columns:
+        # Edit Mode
+        edited_df = st.data_editor(
+            df,
+            column_config={
+                "id": st.column_config.NumberColumn("OS #", disabled=True),
+                "Nome Cliente": st.column_config.TextColumn("Cliente", disabled=True),
+                "date": "Data",
+                "time": "Hora",
+                "status": st.column_config.SelectboxColumn(
+                    "Status",
+                    options=["A realizar", "Realizando", "Concluído"],
+                    required=True
+                ),
+                "metragem": st.column_config.NumberColumn("Volume (m³)", min_value=0, format="%.2f"),
+                "completionDate": st.column_config.DateColumn("Data Fim"),
+                "completionTime": st.column_config.TimeColumn("Hora Fim"),
+            },
+            hide_index=True,
+            disabled=["residentId", "secretaryId", "driverId", "coordinatorId", "Supervisor"],
+            use_container_width=True
+        )
         
-        if success:
-            # Re-fetch para atualizar o session state com os dados do DB
-            st.session_state.data = fetch_all_data()
-            st.success("Alterações salvas automaticamente no banco de dados!")
+        # Save changes back to database
+        if not df.equals(edited_df):
+            success = True
+            for index, row in edited_df.iterrows():
+                # Apenas atualiza se houver mudança real na linha (Streamlit não indica qual linha mudou)
+                original_row = df.loc[index]
+                
+                # Verifica se a linha foi modificada (comparando colunas editáveis)
+                editable_cols = ['date', 'time', 'status', 'metragem', 'completionDate', 'completionTime']
+                modified = any(original_row[col] != row[col] for col in editable_cols)
+                
+                if modified:
+                    # Converte data e hora para string ou None
+                    completion_date = str(row['completionDate']) if pd.notna(row['completionDate']) else None
+                    completion_time = str(row['completionTime']) if pd.notna(row['completionTime']) else None
+                    
+                    # Usando a função update_move_details que criamos no connection.py
+                    if not update_move_details(
+                        move_id=row['id'],
+                        metragem=row['metragem'],
+                        status=row['status'],
+                        completionDate=completion_date,
+                        completionTime=completion_time
+                    ):
+                        success = False
+                        st.error(f"Erro ao atualizar OS #{row['id']} no banco de dados.")
+                        break
+            
+            if success:
+                # Re-fetch para atualizar o session state com os dados do DB
+                st.session_state.data = fetch_all_data()
+                st.success("Alterações salvas automaticamente no banco de dados!")
+    else:
+        st.info("Nenhuma Ordem de Serviço encontrada.")
 
 def residents_form():
     st.title("🏠 Cadastro de Moradores")
