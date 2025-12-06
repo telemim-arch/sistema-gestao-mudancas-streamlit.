@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import time
-from connection import fetch_all_data, init_db_structure, insert_staff, insert_resident, insert_move, update_move_details, get_connection
+from connection import fetch_all_data, init_db_structure, insert_staff, insert_resident, insert_move, update_move_details, get_connection, delete_staff
 
 # --- CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="Telemim Mudanças", page_icon="🚛", layout="wide")
@@ -158,43 +158,72 @@ def dashboard():
     scope_id = get_current_scope_id()
     moves = filter_by_scope(st.session_state.data['moves'])
     
+    # KPIs com Cards Melhorados
     col1, col2, col3 = st.columns(3)
     
+    # Contagem de Status
     todo = len([m for m in moves if m['status'] == 'A realizar'])
     doing = len([m for m in moves if m['status'] == 'Realizando'])
     done = len([m for m in moves if m['status'] == 'Concluído'])
     
+    # Inicializa o filtro de status na sessão
     if 'dashboard_filter_status' not in st.session_state:
         st.session_state.dashboard_filter_status = "Todos"
         
+    # Função para mudar o filtro ao clicar no card
     def set_filter(status):
         st.session_state.dashboard_filter_status = status
         
+    # Cards com métricas usando st.metric (corrigido)
     with col1:
-        if st.button(f"**A Realizar**\n\n# {todo}", key="kpi_todo", use_container_width=True):
+        st.metric(
+            label="📋 A Realizar",
+            value=todo,
+            delta=None
+        )
+        if st.button("Ver Detalhes", key="btn_todo", use_container_width=True):
             set_filter("A realizar")
+    
     with col2:
-        if st.button(f"**Realizando**\n\n# {doing}", key="kpi_doing", use_container_width=True):
+        st.metric(
+            label="🔄 Realizando",
+            value=doing,
+            delta=None
+        )
+        if st.button("Ver Detalhes", key="btn_doing", use_container_width=True):
             set_filter("Realizando")
+    
     with col3:
-        if st.button(f"**Concluídas**\n\n# {done}", key="kpi_done", use_container_width=True):
+        st.metric(
+            label="✅ Concluídas",
+            value=done,
+            delta=None
+        )
+        if st.button("Ver Detalhes", key="btn_done", use_container_width=True):
             set_filter("Concluído")
             
     st.divider()
     
+    # Filtros
     st.subheader("🔎 Buscar Mudanças")
     c1, c2, c3 = st.columns(3)
-    f_name = c1.text_input("Nome do Cliente")
+    f_name = c1.text_input("Nome do Cliente", placeholder="Digite o nome...")
     
-    f_status = c2.selectbox("Status", ["Todos", "A realizar", "Realizando", "Concluído"], 
-                            index=["Todos", "A realizar", "Realizando", "Concluído"].index(st.session_state.dashboard_filter_status),
-                            key="status_selectbox")
+    # O filtro de status agora usa o valor da sessão
+    f_status = c2.selectbox(
+        "Status", 
+        ["Todos", "A realizar", "Realizando", "Concluído"], 
+        index=["Todos", "A realizar", "Realizando", "Concluído"].index(st.session_state.dashboard_filter_status),
+        key="status_selectbox"
+    )
     
+    # Atualiza o filtro da sessão se o selectbox for alterado
     if f_status != st.session_state.dashboard_filter_status:
         st.session_state.dashboard_filter_status = f_status
         
     f_date = c3.date_input("Data", value=None)
     
+    # Aplicar Filtros
     filtered = moves
     if st.session_state.dashboard_filter_status != "Todos":
         filtered = [m for m in filtered if m['status'] == st.session_state.dashboard_filter_status]
@@ -203,16 +232,23 @@ def dashboard():
     if f_name:
         filtered = [m for m in filtered if f_name.lower() in get_name_by_id(st.session_state.data['residents'], m['residentId']).lower()]
 
+    # Exibir Tabela
     if filtered:
         df = pd.DataFrame(filtered)
         if 'residentId' in df.columns:
             df['Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
             df_display = df[['id', 'date', 'Cliente', 'status', 'metragem']]
+            
+            # Renomear colunas
+            df_display.columns = ['OS #', 'Data', 'Cliente', 'Status', 'Volume (m³)']
+            
             st.dataframe(df_display, use_container_width=True, hide_index=True)
+            st.caption(f"📊 Mostrando {len(filtered)} de {len(moves)} ordem(ns) de serviço")
         else:
-            st.warning("Nenhuma mudança encontrada com esses filtros.")
+            st.warning("⚠️ Nenhuma mudança encontrada com esses filtros.")
     else:
-        st.warning("Nenhuma mudança encontrada com esses filtros.")
+        st.info("💡 Nenhuma mudança encontrada com esses filtros.")
+
 
 def manage_moves():
     st.title("📦 Ordens de Serviço")
@@ -413,17 +449,15 @@ def staff_management():
     
     # Formulário de cadastro
     with st.form("new_staff"):
-        st.subheader("Cadastrar Novo Funcionário")
+        st.subheader("➕ Cadastrar Novo Funcionário")
         
         name = st.text_input("Nome Completo")
         email = st.text_input("Login (Email)")
         password = st.text_input("Senha", type="password")
         
-        # Role Select
         role_map = {r['name']: r for r in st.session_state.data['roles'] if r['permission'] not in ['ADMIN', 'SECRETARY']}
         role_name = st.selectbox("Cargo", list(role_map.keys()))
         
-        # Admin Linking
         user = st.session_state.user
         sec_id = None
         if user['role'] == 'ADMIN':
@@ -439,24 +473,24 @@ def staff_management():
         else:
             sec_id = user['id']
 
-        submit = st.form_submit_button("Cadastrar Funcionário")
+        submit = st.form_submit_button("Cadastrar Funcionário", type="primary")
         
         if submit:
             if name:
                 role_permission = role_map[role_name]['permission']
                 if insert_staff(name, email, password or '123', role_permission, role_name, sec_id):
                     st.session_state.data = fetch_all_data()
-                    st.success("Usuário criado!")
+                    st.success("✅ Usuário criado!")
                     st.rerun()
                 else:
-                    st.error("Erro ao cadastrar funcionário no banco de dados.")
+                    st.error("❌ Erro ao cadastrar funcionário no banco de dados.")
             else:
-                st.error("Nome obrigatório")
+                st.error("⚠️ Nome obrigatório")
     
     st.divider()
     
     # Lista de funcionários cadastrados
-    st.subheader("Funcionários Cadastrados")
+    st.subheader("📋 Funcionários Cadastrados")
     
     scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
     
@@ -464,82 +498,101 @@ def staff_management():
         # Criar DataFrame
         df = pd.DataFrame(scoped_staff)
         
-        # Colunas disponíveis no banco
+        # Colunas disponíveis
         available_cols = df.columns.tolist()
-        
-        # Colunas que queremos exibir (na ordem de prioridade)
-        preferred_cols = ['id', 'name', 'jobTitle', 'email', 'role']
-        
-        # Usar apenas as colunas que existem
+        preferred_cols = ['id', 'name', 'email', 'role']
         display_cols = [col for col in preferred_cols if col in available_cols]
         
-        # Se jobTitle não existe, não incluir
-        if 'jobTitle' not in display_cols and 'jobTitle' in preferred_cols:
-            preferred_cols.remove('jobTitle')
-            display_cols = [col for col in preferred_cols if col in available_cols]
-        
         if display_cols:
-            # Criar uma cópia do DataFrame para edição
-            df_display = df[display_cols].copy()
-            
             # Mapear roles para nomes legíveis
-            if 'role' in df_display.columns:
-                df_display['role'] = df_display['role'].apply(lambda x: ROLES.get(x, x))
+            if 'role' in df.columns:
+                df['role_display'] = df['role'].apply(lambda x: ROLES.get(x, x))
             
-            # Configuração de colunas
-            column_config = {
-                "id": st.column_config.NumberColumn("ID", disabled=True),
-                "name": st.column_config.TextColumn("Nome", required=True),
-                "email": st.column_config.TextColumn("Email", required=True),
-                "role": st.column_config.SelectboxColumn(
-                    "Permissão",
-                    options=list(ROLES.values()),
-                    required=True,
-                ),
-            }
-            
-            # Adicionar jobTitle apenas se existir
-            if 'jobTitle' in display_cols:
-                column_config["jobTitle"] = st.column_config.TextColumn("Cargo", required=True)
-            
-            # Editor de dados
-            edited_df = st.data_editor(
-                df_display,
-                column_config=column_config,
-                hide_index=True,
-                use_container_width=True,
-                num_rows="fixed"
-            )
-            
-            # Detectar mudanças e salvar
-            if not df_display.equals(edited_df):
-                try:
-                    diff = edited_df.compare(df_display)
+            # Exibir cada funcionário como um card expansível
+            for idx, row in df.iterrows():
+                with st.expander(f"👤 {row['name']} - {row.get('role_display', row.get('role', 'N/A'))}", expanded=False):
+                    col1, col2 = st.columns([3, 1])
                     
-                    for index in diff.index:
-                        row = edited_df.loc[index]
-                        staff_id = row['id']
-                        name_val = row.get('name', '')
-                        jobTitle_val = row.get('jobTitle', '')
-                        email_val = row.get('email', '')
-                        
-                        # Converte o nome da permissão para a chave
-                        role_val = next((key for key, value in ROLES.items() if value == row['role']), None)
-                        
-                        if role_val and update_staff_details(staff_id, name_val, jobTitle_val, email_val, role_val):
-                            st.success(f"Funcionário {name_val} (ID: {staff_id}) atualizado com sucesso!")
-                        else:
-                            st.error(f"Erro ao atualizar funcionário {name_val} (ID: {staff_id}).")
+                    with col1:
+                        # Formulário de edição
+                        with st.form(f"edit_staff_{row['id']}"):
+                            st.write("**Editar Informações:**")
                             
-                    st.session_state.data = fetch_all_data()
-                    st.rerun()
+                            new_name = st.text_input("Nome", value=row.get('name', ''), key=f"name_{row['id']}")
+                            new_email = st.text_input("Email", value=row.get('email', ''), key=f"email_{row['id']}")
+                            
+                            current_role = row.get('role', '')
+                            current_role_display = ROLES.get(current_role, current_role)
+                            role_options = list(ROLES.values())
+                            
+                            try:
+                                role_index = role_options.index(current_role_display)
+                            except ValueError:
+                                role_index = 0
+                            
+                            new_role_display = st.selectbox(
+                                "Permissão", 
+                                role_options, 
+                                index=role_index,
+                                key=f"role_{row['id']}"
+                            )
+                            
+                            col_btn1, col_btn2 = st.columns(2)
+                            
+                            with col_btn1:
+                                save_btn = st.form_submit_button("💾 Salvar", type="primary", use_container_width=True)
+                            
+                            if save_btn:
+                                new_role = next((key for key, value in ROLES.items() if value == new_role_display), current_role)
+                                
+                                if update_staff_details(row['id'], new_name, '', new_email, new_role):
+                                    st.success(f"✅ {new_name} atualizado!")
+                                    st.session_state.data = fetch_all_data()
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao atualizar")
                     
-                except Exception as e:
-                    st.error(f"Erro ao processar a edição: {e}")
+                    with col2:
+                        st.write("**Ações:**")
+                        st.write("")
+                        
+                        # Botão de deletar
+                        if st.button(f"🗑️ Deletar", key=f"del_{row['id']}", type="secondary", use_container_width=True):
+                            st.session_state[f'confirm_delete_{row["id"]}'] = True
+                            st.rerun()
+                        
+                        # Confirmação de exclusão
+                        if st.session_state.get(f'confirm_delete_{row["id"]}', False):
+                            st.warning("⚠️ Confirmar exclusão?")
+                            col_yes, col_no = st.columns(2)
+                            
+                            with col_yes:
+                                if st.button("Sim", key=f"yes_{row['id']}", use_container_width=True):
+                                    # Importar a função delete_staff
+                                    from connection import delete_staff
+                                    if delete_staff(row['id']):
+                                        st.success(f"✅ {row['name']} deletado!")
+                                        st.session_state.data = fetch_all_data()
+                                        if f'confirm_delete_{row["id"]}' in st.session_state:
+                                            del st.session_state[f'confirm_delete_{row["id"]}']
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Erro ao deletar")
+                            
+                            with col_no:
+                                if st.button("Não", key=f"no_{row['id']}", use_container_width=True):
+                                    if f'confirm_delete_{row["id"]}' in st.session_state:
+                                        del st.session_state[f'confirm_delete_{row["id"]}']
+                                    st.rerun()
+                        
+                        # Info do ID
+                        st.caption(f"ID: {row['id']}")
+            
+            st.caption(f"📊 Total: {len(scoped_staff)} funcionário(s)")
         else:
             st.error("Nenhuma coluna válida para exibir.")
     else:
-        st.info("Nenhum funcionário cadastrado no seu escopo ainda.")
+        st.info("💡 Nenhum funcionário cadastrado no seu escopo ainda.")
 
 
 def manage_secretaries():
@@ -650,22 +703,26 @@ def manage_roles():
             
     st.table(pd.DataFrame(st.session_state.data['roles']))
 
+# SUBSTITUIR A SEÇÃO DE NAVEGAÇÃO PRINCIPAL NO FINAL DO ARQUIVO
+
 if not st.session_state.user:
     login_screen()
 else:
     user = st.session_state.user
     
+    # Mapeamento de Opções com Ícones e Emojis
     menu_map = {
-        "Gerenciamento": {"icon": "house", "func": dashboard},
-        "Ordens de Serviço": {"icon": "box-seam", "func": manage_moves},
-        "Moradores": {"icon": "person-vcard", "func": residents_form},
-        "Agendamento": {"icon": "calendar-check", "func": schedule_form},
-        "Funcionários": {"icon": "people", "func": staff_management},
-        "Secretarias": {"icon": "building", "func": manage_secretaries},
-        "Cargos": {"icon": "shield-lock", "func": manage_roles},
-        "Relatórios": {"icon": "bar-chart-line", "func": reports_page},
+        "Gerenciamento": {"icon": "📊", "func": dashboard},
+        "Ordens de Serviço": {"icon": "📦", "func": manage_moves},
+        "Moradores": {"icon": "🏠", "func": residents_form},
+        "Agendamento": {"icon": "📅", "func": schedule_form},
+        "Funcionários": {"icon": "👥", "func": staff_management},
+        "Secretarias": {"icon": "🏢", "func": manage_secretaries},
+        "Cargos": {"icon": "🛡️", "func": manage_roles},
+        "Relatórios": {"icon": "📈", "func": reports_page},
     }
     
+    # Regras de Menu Dinâmico
     options = ["Gerenciamento", "Ordens de Serviço"]
     can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
     
@@ -677,21 +734,37 @@ else:
     elif user['role'] == 'SECRETARY':
         options.extend(["Funcionários"])
         
+    # Criação da Lista de Opções para o Menu
     menu_options = [op for op in options if op in menu_map]
-    menu_icons = [menu_map[op]['icon'] for op in menu_options]
     
+    # Sidebar de Usuário com ícones
     with st.sidebar:
-        st.title(f"Olá, {user['name']}")
-        st.caption(f"Cargo: {user.get('jobTitle', 'N/A')}")
+        st.markdown(f"### 👤 {user['name']}")
+        st.caption(f"🎯 Cargo: {user.get('jobTitle', user['role'])}")
         
-        if st.button("Sair", type="primary"):
-            st.session_state.user = None
-            st.rerun()
-            
         st.divider()
         
-    tabs = st.tabs([f":{menu_map[op]['icon']}:" for op in menu_options])
+        # Menu de navegação na sidebar
+        st.markdown("### 📑 Menu")
+        
+        for option in menu_options:
+            icon = menu_map[option]['icon']
+            if st.button(f"{icon} {option}", key=f"menu_{option}", use_container_width=True):
+                st.session_state['current_page'] = option
+        
+        st.divider()
+        
+        if st.button("🚪 Sair", type="primary", use_container_width=True):
+            st.session_state.user = None
+            st.rerun()
     
-    for i, choice in enumerate(menu_options):
-        with tabs[i]:
-            menu_map[choice]['func']()
+    # Renderizar página selecionada
+    current_page = st.session_state.get('current_page', 'Gerenciamento')
+    
+    # Garantir que a página atual está nas opções disponíveis
+    if current_page not in menu_options:
+        current_page = menu_options[0]
+        st.session_state['current_page'] = current_page
+    
+    # Executar função da página
+    menu_map[current_page]['func']()

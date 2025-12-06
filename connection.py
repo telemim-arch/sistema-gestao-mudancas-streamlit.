@@ -43,7 +43,7 @@ def init_db_structure(conn):
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL, -- ATENÇÃO: Em produção, use hash de senha!
+            password TEXT NOT NULL,
             role TEXT NOT NULL,
             jobTitle TEXT,
             secretaryId INTEGER REFERENCES staff(id),
@@ -150,7 +150,7 @@ def fetch_all_data():
     
     return data
 
-# --- Funções CRUD Específicas (Exemplo) ---
+# --- Funções CRUD Específicas ---
 
 def insert_staff(name, email, password, role, jobTitle, secretaryId=None, branchName=None):
     """Insere um novo funcionário."""
@@ -214,4 +214,24 @@ def update_staff_details(staff_id, name, jobTitle, email, role):
         WHERE id = %s
     """
     params = (name, jobTitle, email, role, staff_id)
+    return execute_query(query, params)
+
+# --- Funções de DELETE ---
+
+def delete_staff(staff_id):
+    """Deleta um funcionário."""
+    query = "DELETE FROM staff WHERE id = %s"
+    params = (staff_id,)
+    return execute_query(query, params)
+
+def delete_resident(resident_id):
+    """Deleta um morador."""
+    query = "DELETE FROM residents WHERE id = %s"
+    params = (resident_id,)
+    return execute_query(query, params)
+
+def delete_move(move_id):
+    """Deleta uma ordem de serviço."""
+    query = "DELETE FROM moves WHERE id = %s"
+    params = (move_id,)
     return execute_query(query, params)
