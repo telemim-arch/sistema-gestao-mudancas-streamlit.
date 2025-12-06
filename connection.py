@@ -176,13 +176,29 @@ def insert_resident(data):
 
 def insert_move(data):
     """Insere uma nova ordem de serviço."""
+    # Garantir que secretaryId nunca seja None
+    secretary_id = data.get('secretaryId')
+    if secretary_id is None:
+        # Tentar pegar do residentId
+        conn = get_connection()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("SELECT \"secretaryId\" FROM residents WHERE id = %s", (data['residentId'],))
+            result = cur.fetchone()
+            cur.close()
+            if result and result[0]:
+                secretary_id = result[0]
+            else:
+                # Se ainda for None, usar ID 1 (admin padrão)
+                secretary_id = 1
+    
     query = """
         INSERT INTO moves (residentId, date, time, metragem, supervisorId, coordinatorId, driverId, status, secretaryId)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
     """
     params = (
         data['residentId'], data['date'], data['time'], data['metragem'], data['supervisorId'], 
-        data['coordinatorId'], data['driverId'], data['status'], data['secretaryId']
+        data['coordinatorId'], data['driverId'], data['status'], secretary_id
     )
     return execute_query(query, params)
 
