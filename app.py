@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import time
-from connection import fetch_all_data, init_db_structure, insert_staff, insert_resident, insert_move, update_move_details, get_connection, delete_staff
+from connection import fetch_all_data, init_db_structure, insert_staff, insert_resident, insert_move, update_move_details, get_connection, delete_staff, update_staff_details
 
 # --- CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="Telemim Mudanças", page_icon="🚛", layout="wide")
