@@ -317,28 +317,32 @@ def manage_moves():
 def residents_form():
     st.title("🏠 Cadastro de Moradores")
     
-    with st.form("new_resident"):
-        st.subheader("Dados do Cliente")
-        name = st.text_input("Nome Completo *")
+    # Inicializar contador de cadastros
+    if 'resident_form_key' not in st.session_state:
+        st.session_state.resident_form_key = 0
+    
+    with st.form(f"new_resident_{st.session_state.resident_form_key}"):
+        st.subheader("📝 Dados do Cliente")
+        name = st.text_input("Nome Completo *", placeholder="Digite o nome completo...")
         c1, c2 = st.columns(2)
-        selo = c1.text_input("Selo / ID")
-        contact = c2.text_input("Telefone / Contato")
+        selo = c1.text_input("Selo / ID", placeholder="Ex: A123")
+        contact = c2.text_input("Telefone / Contato", placeholder="(00) 00000-0000")
         
-        st.subheader("Origem")
+        st.subheader("📍 Origem")
         c3, c4 = st.columns([3, 1])
-        orig_addr = c3.text_input("Endereço (Origem)")
-        orig_num = c4.text_input("Nº (Origem)")
-        orig_bairro = st.text_input("Bairro (Origem)")
+        orig_addr = c3.text_input("Endereço (Origem)", placeholder="Rua, Avenida...")
+        orig_num = c4.text_input("Nº (Origem)", placeholder="123")
+        orig_bairro = st.text_input("Bairro (Origem)", placeholder="Nome do bairro")
         
-        st.subheader("Destino")
+        st.subheader("🎯 Destino")
         c5, c6 = st.columns([3, 1])
-        dest_addr = c5.text_input("Endereço (Destino)")
-        dest_num = c6.text_input("Nº (Destino)")
-        dest_bairro = st.text_input("Bairro (Destino)")
+        dest_addr = c5.text_input("Endereço (Destino)", placeholder="Rua, Avenida...")
+        dest_num = c6.text_input("Nº (Destino)", placeholder="456")
+        dest_bairro = st.text_input("Bairro (Destino)", placeholder="Nome do bairro")
         
-        obs = st.text_area("Observações")
+        obs = st.text_area("Observações", placeholder="Informações adicionais...")
         
-        st.subheader("Previsão")
+        st.subheader("📅 Previsão")
         c7, c8 = st.columns(2)
         move_date = c7.date_input("Data da Mudança")
         move_time = c8.time_input("Hora")
@@ -352,14 +356,16 @@ def residents_form():
             for s in secretaries:
                 key = s.get('branchName') or s['name']
                 sec_options[key] = s['id']
-            selected_sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
-            if selected_sec_name: sec_id = sec_options[selected_sec_name]
+            if sec_options:
+                selected_sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
+                if selected_sec_name: 
+                    sec_id = sec_options[selected_sec_name]
 
-        submit = st.form_submit_button("Salvar Morador")
+        submit = st.form_submit_button("✅ Salvar Morador", type="primary", use_container_width=True)
         
         if submit:
             if not name:
-                st.error("Nome é obrigatório.")
+                st.error("⚠️ Nome é obrigatório.")
             else:
                 new_res = {
                     'name': name, 'selo': selo, 'contact': contact,
@@ -370,9 +376,16 @@ def residents_form():
                 }
                 if insert_resident(new_res):
                     st.session_state.data = fetch_all_data()
-                    st.success("Morador cadastrado com sucesso!")
+                    st.session_state.resident_form_key += 1
+                    
+                    st.toast("🎉 Cadastro de morador concluído!", icon="✅")
+                    st.success(f"✅ **{name}** cadastrado(a) com sucesso!\\n\\n📍 Origem: {orig_addr or 'N/A'}\\n🎯 Destino: {dest_addr or 'N/A'}")
+                    
+                    time.sleep(1)
+                    st.rerun()
                 else:
-                    st.error("Erro ao cadastrar morador no banco de dados.")
+                    st.error("❌ Erro ao cadastrar morador no banco de dados.")
+
 
 def schedule_form():
     st.title("🗓️ Agendamento de OS")
@@ -447,13 +460,17 @@ def schedule_form():
 def staff_management():
     st.title("👥 Recursos Humanos")
     
-    # Formulário de cadastro
-    with st.form("new_staff"):
+    # Inicializar contador de cadastros na sessão
+    if 'staff_form_key' not in st.session_state:
+        st.session_state.staff_form_key = 0
+    
+    # Formulário de cadastro com key dinâmica para reset
+    with st.form(f"new_staff_{st.session_state.staff_form_key}"):
         st.subheader("➕ Cadastrar Novo Funcionário")
         
-        name = st.text_input("Nome Completo")
-        email = st.text_input("Login (Email)")
-        password = st.text_input("Senha", type="password")
+        name = st.text_input("Nome Completo", placeholder="Digite o nome completo...")
+        email = st.text_input("Login (Email)", placeholder="exemplo@telemim.com")
+        password = st.text_input("Senha", type="password", placeholder="Deixe vazio para senha padrão: 123")
         
         role_map = {r['name']: r for r in st.session_state.data['roles'] if r['permission'] not in ['ADMIN', 'SECRETARY']}
         role_name = st.selectbox("Cargo", list(role_map.keys()))
@@ -473,19 +490,35 @@ def staff_management():
         else:
             sec_id = user['id']
 
-        submit = st.form_submit_button("Cadastrar Funcionário", type="primary")
+        submit = st.form_submit_button("✅ Cadastrar Funcionário", type="primary", use_container_width=True)
         
         if submit:
-            if name:
+            if name and email:
                 role_permission = role_map[role_name]['permission']
                 if insert_staff(name, email, password or '123', role_permission, role_name, sec_id):
+                    # Atualizar dados
                     st.session_state.data = fetch_all_data()
-                    st.success("✅ Usuário criado!")
+                    
+                    # Incrementar key do formulário para resetá-lo
+                    st.session_state.staff_form_key += 1
+                    
+                    # Notificação toast
+                    st.toast("🎉 Cadastro concluído com sucesso!", icon="✅")
+                    
+                    # Mensagem de sucesso adicional
+                    st.success(f"✅ **{name}** cadastrado(a) com sucesso!\\n\\n📧 Login: `{email}`\\n🔑 Senha: `{password or '123'}`")
+                    
+                    # Aguardar um pouco para mostrar a mensagem
+                    time.sleep(1)
+                    
+                    # Recarregar para limpar o formulário
                     st.rerun()
                 else:
                     st.error("❌ Erro ao cadastrar funcionário no banco de dados.")
-            else:
-                st.error("⚠️ Nome obrigatório")
+            elif not name:
+                st.error("⚠️ Nome é obrigatório")
+            elif not email:
+                st.error("⚠️ Email é obrigatório")
     
     st.divider()
     
@@ -495,26 +528,20 @@ def staff_management():
     scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
     
     if scoped_staff:
-        # Criar DataFrame
         df = pd.DataFrame(scoped_staff)
-        
-        # Colunas disponíveis
         available_cols = df.columns.tolist()
         preferred_cols = ['id', 'name', 'email', 'role']
         display_cols = [col for col in preferred_cols if col in available_cols]
         
         if display_cols:
-            # Mapear roles para nomes legíveis
             if 'role' in df.columns:
                 df['role_display'] = df['role'].apply(lambda x: ROLES.get(x, x))
             
-            # Exibir cada funcionário como um card expansível
             for idx, row in df.iterrows():
                 with st.expander(f"👤 {row['name']} - {row.get('role_display', row.get('role', 'N/A'))}", expanded=False):
                     col1, col2 = st.columns([3, 1])
                     
                     with col1:
-                        # Formulário de edição
                         with st.form(f"edit_staff_{row['id']}"):
                             st.write("**Editar Informações:**")
                             
@@ -546,8 +573,10 @@ def staff_management():
                                 new_role = next((key for key, value in ROLES.items() if value == new_role_display), current_role)
                                 
                                 if update_staff_details(row['id'], new_name, '', new_email, new_role):
-                                    st.success(f"✅ {new_name} atualizado!")
+                                    st.toast(f"✅ {new_name} atualizado!", icon="💾")
+                                    st.success(f"✅ **{new_name}** atualizado com sucesso!")
                                     st.session_state.data = fetch_all_data()
+                                    time.sleep(1)
                                     st.rerun()
                                 else:
                                     st.error("❌ Erro ao atualizar")
@@ -556,25 +585,23 @@ def staff_management():
                         st.write("**Ações:**")
                         st.write("")
                         
-                        # Botão de deletar
                         if st.button(f"🗑️ Deletar", key=f"del_{row['id']}", type="secondary", use_container_width=True):
                             st.session_state[f'confirm_delete_{row["id"]}'] = True
                             st.rerun()
                         
-                        # Confirmação de exclusão
                         if st.session_state.get(f'confirm_delete_{row["id"]}', False):
                             st.warning("⚠️ Confirmar exclusão?")
                             col_yes, col_no = st.columns(2)
                             
                             with col_yes:
                                 if st.button("Sim", key=f"yes_{row['id']}", use_container_width=True):
-                                    # Importar a função delete_staff
-                                    from connection import delete_staff
                                     if delete_staff(row['id']):
-                                        st.success(f"✅ {row['name']} deletado!")
+                                        st.toast(f"🗑️ {row['name']} deletado!", icon="✅")
+                                        st.success(f"✅ **{row['name']}** deletado com sucesso!")
                                         st.session_state.data = fetch_all_data()
                                         if f'confirm_delete_{row["id"]}' in st.session_state:
                                             del st.session_state[f'confirm_delete_{row["id"]}']
+                                        time.sleep(1)
                                         st.rerun()
                                     else:
                                         st.error("❌ Erro ao deletar")
@@ -585,7 +612,6 @@ def staff_management():
                                         del st.session_state[f'confirm_delete_{row["id"]}']
                                     st.rerun()
                         
-                        # Info do ID
                         st.caption(f"ID: {row['id']}")
             
             st.caption(f"📊 Total: {len(scoped_staff)} funcionário(s)")
@@ -595,67 +621,60 @@ def staff_management():
         st.info("💡 Nenhum funcionário cadastrado no seu escopo ainda.")
 
 
+
 def manage_secretaries():
     st.title("🏢 Gestão de Secretarias")
     
+    # Inicializar contador
+    if 'secretary_form_key' not in st.session_state:
+        st.session_state.secretary_form_key = 0
+    
     # Formulário de cadastro
-    st.subheader("Cadastrar Nova Secretaria")
+    st.subheader("➕ Cadastrar Nova Secretaria")
     
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        name = st.text_input("Nome da Secretaria / Base")
+        name = st.text_input("Nome da Secretaria / Base", 
+                            placeholder="Ex: Matriz, Filial Sul...",
+                            key=f"sec_name_{st.session_state.secretary_form_key}")
     
     with col2:
-        st.write("")  # Espaçamento
-        st.write("")  # Espaçamento
-        if st.button("Criar Base", type="primary", use_container_width=True):
+        st.write("")
+        st.write("")
+        if st.button("✅ Criar Base", type="primary", use_container_width=True):
             if name:
                 login = name.lower().replace(" ", "") + "@telemim.com"
                 if insert_staff(name, login, '123', 'SECRETARY', 'Secretária', None, name):
                     st.session_state.data = fetch_all_data()
-                    new_sec = next((s for s in st.session_state.data['staff'] if s['email'] == login), None)
-                    if new_sec:
-                        st.success(f"✅ Criado! Login: {login} | Senha: 123")
-                        st.rerun()
-                    else:
-                        st.success(f"✅ Criado! Login: {login} | Senha: 123")
+                    st.session_state.secretary_form_key += 1
+                    
+                    st.toast("🎉 Secretaria criada com sucesso!", icon="✅")
+                    st.success(f"✅ **{name}** criada com sucesso!\\n\\n📧 Login: `{login}`\\n🔑 Senha: `123`")
+                    
+                    time.sleep(1)
+                    st.rerun()
                 else:
-                    st.error("Erro ao cadastrar Secretária no banco de dados.")
+                    st.error("❌ Erro ao cadastrar Secretária no banco de dados.")
             else:
-                st.error("Nome da Secretaria / Base é obrigatório.")
+                st.error("⚠️ Nome da Secretaria / Base é obrigatório.")
     
     st.divider()
     
     # Lista de secretarias cadastradas
-    st.subheader("Secretarias Cadastradas")
+    st.subheader("📋 Secretarias Cadastradas")
     
-    # Filtrar apenas secretárias
     secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
     
     if secretaries:
-        # Criar DataFrame
         df = pd.DataFrame(secretaries)
-        
-        # Colunas disponíveis
         available_cols = df.columns.tolist()
-        
-        # Colunas que queremos exibir
         preferred_cols = ['id', 'name', 'branchName', 'email']
         display_cols = [col for col in preferred_cols if col in available_cols]
         
         if display_cols:
             df_display = df[display_cols].copy()
             
-            # Renomear colunas para exibição
-            rename_map = {
-                'id': 'ID',
-                'name': 'Nome',
-                'branchName': 'Base',
-                'email': 'Login'
-            }
-            
-            # Configuração de colunas
             column_config = {}
             for col in display_cols:
                 if col == 'id':
@@ -667,7 +686,6 @@ def manage_secretaries():
                 elif col == 'email':
                     column_config[col] = st.column_config.TextColumn("Login", disabled=True)
             
-            # Exibir tabela (apenas leitura)
             st.dataframe(
                 df_display,
                 column_config=column_config,
@@ -675,12 +693,11 @@ def manage_secretaries():
                 use_container_width=True
             )
             
-            # Estatísticas
             st.caption(f"📊 Total de secretarias: {len(secretaries)}")
         else:
             st.warning("Dados incompletos na tabela de secretarias.")
     else:
-        st.info("Nenhuma secretaria cadastrada ainda.")
+        st.info("💡 Nenhuma secretaria cadastrada ainda.")
 
 
 def reports_page():
