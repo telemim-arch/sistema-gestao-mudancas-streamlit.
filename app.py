@@ -458,55 +458,49 @@ def staff_management():
     # Lista de funcionários cadastrados
     st.subheader("Funcionários Cadastrados")
     
-    # Debug: Mostrar quantos funcionários existem
-    all_staff = st.session_state.data.get('staff', [])
-    st.caption(f"Total de funcionários no sistema: {len(all_staff)}")
-    
     scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
-    st.caption(f"Funcionários no seu escopo: {len(scoped_staff)}")
     
     if scoped_staff:
         # Criar DataFrame
         df = pd.DataFrame(scoped_staff)
         
-        # Debug: Mostrar colunas disponíveis
-        st.caption(f"Colunas disponíveis: {', '.join(df.columns.tolist())}")
+        # Colunas disponíveis no banco
+        available_cols = df.columns.tolist()
         
-        # Colunas a serem exibidas
-        display_cols = ['id', 'name', 'jobTitle', 'email', 'role']
+        # Colunas que queremos exibir (na ordem de prioridade)
+        preferred_cols = ['id', 'name', 'jobTitle', 'email', 'role']
         
-        # Verificar se todas as colunas existem
-        missing_cols = [col for col in display_cols if col not in df.columns]
-        if missing_cols:
-            st.error(f"Colunas faltando no banco de dados: {', '.join(missing_cols)}")
-            st.info("Exibindo apenas as colunas disponíveis...")
-            # Usar apenas as colunas que existem
-            display_cols = [col for col in display_cols if col in df.columns]
+        # Usar apenas as colunas que existem
+        display_cols = [col for col in preferred_cols if col in available_cols]
+        
+        # Se jobTitle não existe, não incluir
+        if 'jobTitle' not in display_cols and 'jobTitle' in preferred_cols:
+            preferred_cols.remove('jobTitle')
+            display_cols = [col for col in preferred_cols if col in available_cols]
         
         if display_cols:
             # Criar uma cópia do DataFrame para edição
             df_display = df[display_cols].copy()
             
-            # Mapear roles para nomes legíveis (apenas se a coluna 'role' existir)
+            # Mapear roles para nomes legíveis
             if 'role' in df_display.columns:
                 df_display['role'] = df_display['role'].apply(lambda x: ROLES.get(x, x))
             
             # Configuração de colunas
-            column_config = {}
-            if 'id' in display_cols:
-                column_config["id"] = st.column_config.NumberColumn("ID", disabled=True)
-            if 'name' in display_cols:
-                column_config["name"] = st.column_config.TextColumn("Nome", required=True)
-            if 'jobTitle' in display_cols:
-                column_config["jobTitle"] = st.column_config.TextColumn("Cargo", required=True)
-            if 'email' in display_cols:
-                column_config["email"] = st.column_config.TextColumn("Email", required=True)
-            if 'role' in display_cols:
-                column_config["role"] = st.column_config.SelectboxColumn(
+            column_config = {
+                "id": st.column_config.NumberColumn("ID", disabled=True),
+                "name": st.column_config.TextColumn("Nome", required=True),
+                "email": st.column_config.TextColumn("Email", required=True),
+                "role": st.column_config.SelectboxColumn(
                     "Permissão",
                     options=list(ROLES.values()),
                     required=True,
-                )
+                ),
+            }
+            
+            # Adicionar jobTitle apenas se existir
+            if 'jobTitle' in display_cols:
+                column_config["jobTitle"] = st.column_config.TextColumn("Cargo", required=True)
             
             # Editor de dados
             edited_df = st.data_editor(
@@ -530,10 +524,7 @@ def staff_management():
                         email_val = row.get('email', '')
                         
                         # Converte o nome da permissão para a chave
-                        if 'role' in row:
-                            role_val = next((key for key, value in ROLES.items() if value == row['role']), None)
-                        else:
-                            role_val = None
+                        role_val = next((key for key, value in ROLES.items() if value == row['role']), None)
                         
                         if role_val and update_staff_details(staff_id, name_val, jobTitle_val, email_val, role_val):
                             st.success(f"Funcionário {name_val} (ID: {staff_id}) atualizado com sucesso!")
@@ -545,37 +536,99 @@ def staff_management():
                     
                 except Exception as e:
                     st.error(f"Erro ao processar a edição: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
         else:
             st.error("Nenhuma coluna válida para exibir.")
     else:
         st.info("Nenhum funcionário cadastrado no seu escopo ainda.")
-        
-        # Mostrar todos os funcionários se for admin (para debug)
-        if st.session_state.user['role'] == 'ADMIN' and all_staff:
-            with st.expander("🔍 Debug: Ver todos os funcionários (Admin)"):
-                st.json(all_staff)
 
 
 def manage_secretaries():
     st.title("🏢 Gestão de Secretarias")
     
-    name = st.text_input("Nome da Secretaria / Base")
-    if st.button("Criar Base"):
-        if name:
-            login = name.lower().replace(" ", "") + "@telemim.com"
-            if insert_staff(name, login, '123', 'SECRETARY', 'Secretária', None, name):
-                st.session_state.data = fetch_all_data()
-                new_sec = next((s for s in st.session_state.data['staff'] if s['email'] == login), None)
-                if new_sec and new_sec.get('secretaryId') is None:
-                    st.success(f"Criado! Login automático: {login} / Senha: 123.")
+    # Formulário de cadastro
+    st.subheader("Cadastrar Nova Secretaria")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        name = st.text_input("Nome da Secretaria / Base")
+    
+    with col2:
+        st.write("")  # Espaçamento
+        st.write("")  # Espaçamento
+        if st.button("Criar Base", type="primary", use_container_width=True):
+            if name:
+                login = name.lower().replace(" ", "") + "@telemim.com"
+                if insert_staff(name, login, '123', 'SECRETARY', 'Secretária', None, name):
+                    st.session_state.data = fetch_all_data()
+                    new_sec = next((s for s in st.session_state.data['staff'] if s['email'] == login), None)
+                    if new_sec:
+                        st.success(f"✅ Criado! Login: {login} | Senha: 123")
+                        st.rerun()
+                    else:
+                        st.success(f"✅ Criado! Login: {login} | Senha: 123")
                 else:
-                    st.success(f"Criado! Login automático: {login} / Senha: 123.")
+                    st.error("Erro ao cadastrar Secretária no banco de dados.")
             else:
-                st.error("Erro ao cadastrar Secretária no banco de dados.")
+                st.error("Nome da Secretaria / Base é obrigatório.")
+    
+    st.divider()
+    
+    # Lista de secretarias cadastradas
+    st.subheader("Secretarias Cadastradas")
+    
+    # Filtrar apenas secretárias
+    secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
+    
+    if secretaries:
+        # Criar DataFrame
+        df = pd.DataFrame(secretaries)
+        
+        # Colunas disponíveis
+        available_cols = df.columns.tolist()
+        
+        # Colunas que queremos exibir
+        preferred_cols = ['id', 'name', 'branchName', 'email']
+        display_cols = [col for col in preferred_cols if col in available_cols]
+        
+        if display_cols:
+            df_display = df[display_cols].copy()
+            
+            # Renomear colunas para exibição
+            rename_map = {
+                'id': 'ID',
+                'name': 'Nome',
+                'branchName': 'Base',
+                'email': 'Login'
+            }
+            
+            # Configuração de colunas
+            column_config = {}
+            for col in display_cols:
+                if col == 'id':
+                    column_config[col] = st.column_config.NumberColumn("ID", disabled=True)
+                elif col == 'name':
+                    column_config[col] = st.column_config.TextColumn("Nome", disabled=True)
+                elif col == 'branchName':
+                    column_config[col] = st.column_config.TextColumn("Base", disabled=True)
+                elif col == 'email':
+                    column_config[col] = st.column_config.TextColumn("Login", disabled=True)
+            
+            # Exibir tabela (apenas leitura)
+            st.dataframe(
+                df_display,
+                column_config=column_config,
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Estatísticas
+            st.caption(f"📊 Total de secretarias: {len(secretaries)}")
         else:
-            st.error("Nome da Secretaria / Base é obrigatório.")
+            st.warning("Dados incompletos na tabela de secretarias.")
+    else:
+        st.info("Nenhuma secretaria cadastrada ainda.")
+
 
 def reports_page():
     st.title("📈 Relatórios e Análises")
