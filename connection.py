@@ -129,15 +129,28 @@ def fetch_all_data():
     
     # 1. Staff
     df_staff = execute_query("SELECT * FROM staff", fetch_data=True)
-    data['staff'] = df_staff.to_dict('records') if df_staff is not None else []
+    if df_staff is not None:
+        # Substituir NaN por None
+        df_staff = df_staff.where(pd.notnull(df_staff), None)
+        data['staff'] = df_staff.to_dict('records')
+    else:
+        data['staff'] = []
     
     # 2. Residents
     df_residents = execute_query("SELECT * FROM residents", fetch_data=True)
-    data['residents'] = df_residents.to_dict('records') if df_residents is not None else []
+    if df_residents is not None:
+        df_residents = df_residents.where(pd.notnull(df_residents), None)
+        data['residents'] = df_residents.to_dict('records')
+    else:
+        data['residents'] = []
     
     # 3. Moves
     df_moves = execute_query("SELECT * FROM moves", fetch_data=True)
-    data['moves'] = df_moves.to_dict('records') if df_moves is not None else []
+    if df_moves is not None:
+        df_moves = df_moves.where(pd.notnull(df_moves), None)
+        data['moves'] = df_moves.to_dict('records')
+    else:
+        data['moves'] = []
     
     # 4. Roles (Hardcoded, pois é estático)
     data['roles'] = [
