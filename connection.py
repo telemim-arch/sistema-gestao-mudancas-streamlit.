@@ -290,3 +290,156 @@ def delete_move(move_id):
     query = "DELETE FROM moves WHERE id = %s"
     params = (move_id,)
     return execute_query(query, params)
+
+# ==============================================================================
+# NOVAS FUNÇÕES - FUNCIONALIDADES ADICIONAIS
+# ==============================================================================
+
+# --- FUNÇÕES DE NOTIFICAÇÕES ---
+
+def insert_notification(userId, title, message, type='info', link=None):
+    """Cria uma nova notificação."""
+    query = """
+        INSERT INTO notifications (userId, title, message, type, link)
+        VALUES (%s, %s, %s, %s, %s)
+    """
+    params = (userId, title, message, type, link)
+    return execute_query(query, params)
+
+def get_user_notifications(userId, unread_only=False):
+    """Busca notificações de um usuário."""
+    if unread_only:
+        query = "SELECT * FROM notifications WHERE userId = %s AND isRead = FALSE ORDER BY createdAt DESC"
+    else:
+        query = "SELECT * FROM notifications WHERE userId = %s ORDER BY createdAt DESC LIMIT 50"
+    
+    df = execute_query(query, (userId,), fetch_data=True)
+    return df.to_dict('records') if df is not None else []
+
+def mark_notification_read(notification_id):
+    """Marca notificação como lida."""
+    query = "UPDATE notifications SET isRead = TRUE WHERE id = %s"
+    return execute_query(query, (notification_id,))
+
+def get_unread_count(userId):
+    """Conta notificações não lidas."""
+    query = "SELECT COUNT(*) as count FROM notifications WHERE userId = %s AND isRead = FALSE"
+    df = execute_query(query, (userId,), fetch_data=True)
+    return df['count'].iloc[0] if df is not None and not df.empty else 0
+
+# --- FUNÇÕES DE ANEXOS ---
+
+def insert_attachment(moveId, fileName, fileType, fileData, uploadedBy, description=None):
+    """Adiciona um anexo (foto/documento) a uma OS."""
+    conn = get_connection()
+    if not conn:
+        return False
+    
+    try:
+        cur = conn.cursor()
+        query = """
+            INSERT INTO attachments (moveId, fileName, fileType, fileData, uploadedBy, description)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        cur.execute(query, (moveId, fileName, fileType, psycopg2.Binary(fileData), uploadedBy, description))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao inserir anexo: {e}")
+        conn.rollback()
+        return False
+
+def get_attachments(moveId):
+    """Busca todos os anexos de uma OS."""
+    query = "SELECT id, fileName, fileType, uploadedBy, uploadedAt, description FROM attachments WHERE moveId = %s ORDER BY uploadedAt DESC"
+    df = execute_query(query, (moveId,), fetch_data=True)
+    return df.to_dict('records') if df is not None else []
+
+def get_attachment_data(attachment_id):
+    """Busca dados binários de um anexo específico."""
+    query = "SELECT fileData, fileName, fileType FROM attachments WHERE id = %s"
+    df = execute_query(query, (attachment_id,), fetch_data=True)
+    if df is not None and not df.empty:
+        return {
+            'data': bytes(df['filedata'].iloc[0]),
+            'name': df['filename'].iloc[0],
+            'type': df['filetype'].iloc[0]
+        }
+    return None
+
+def delete_attachment(attachment_id):
+    """Deleta um anexo."""
+    query = "DELETE FROM attachments WHERE id = %s"
+    return execute_query(query, (attachment_id,))
+
+# --- FUNÇÕES DE WHATSAPP ---
+
+def mark_whatsapp_sent(move_id):
+    """Marca que WhatsApp foi enviado para uma OS."""
+    query = "UPDATE moves SET whatsappSent = TRUE, whatsappSentAt = CURRENT_TIMESTAMP WHERE id = %s"
+    return execute_query(query, (move_id,))
+
+def get_pending_whatsapp():
+    """Busca OSs que precisam enviar WhatsApp."""
+    query = """
+        SELECT m.*, r.name as residentName, r.phone as residentPhone
+        FROM moves m
+        JOIN residents r ON m.residentId = r.id
+        WHERE m.whatsappSent = FALSE 
+        AND m.status = 'A realizar'
+        AND r.phone IS NOT NULL
+        ORDER BY m.date ASC
+    """
+    df = execute_query(query, fetch_data=True)
+    return df.to_dict('records') if df is not None else []
+
+# --- FUNÇÕES DE ROTA ---
+
+def update_route_info(move_id, distance, duration, origin_lat, origin_lng, dest_lat, dest_lng):
+    """Atualiza informações de rota de uma OS."""
+    query = """
+        UPDATE moves 
+        SET distance = %s, estimatedDuration = %s, 
+            originLat = %s, originLng = %s, 
+            destLat = %s, destLng = %s
+        WHERE id = %s
+    """
+    params = (distance, duration, origin_lat, origin_lng, dest_lat, dest_lng, move_id)
+    return execute_query(query, params)
+
+# --- FUNÇÕES DE RELATÓRIOS ---
+
+def get_report_data(start_date=None, end_date=None):
+    """Busca dados para relatórios."""
+    base_query = """
+        SELECT 
+            m.*,
+            r.name as clientName,
+            r.originAddress,
+            r.destAddress,
+            s.name as supervisorName,
+            c.name as coordinatorName,
+            d.name as driverName,
+            sec.name as secretaryName
+        FROM moves m
+        LEFT JOIN residents r ON m.residentId = r.id
+        LEFT JOIN staff s ON m.supervisorId = s.id
+        LEFT JOIN staff c ON m.coordinatorId = c.id
+        LEFT JOIN staff d ON m.driverId = d.id
+        LEFT JOIN staff sec ON m.secretaryId = sec.id
+        WHERE 1=1
+    """
+    
+    params = []
+    if start_date:
+        base_query += " AND m.date >= %s"
+        params.append(start_date)
+    if end_date:
+        base_query += " AND m.date <= %s"
+        params.append(end_date)
+    
+    base_query += " ORDER BY m.date DESC"
+    
+    df = execute_query(base_query, tuple(params) if params else None, fetch_data=True)
+    return df if df is not None else pd.DataFrame()
