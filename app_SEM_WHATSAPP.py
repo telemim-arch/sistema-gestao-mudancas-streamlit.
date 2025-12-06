@@ -151,6 +151,28 @@ def get_time_ago(dt):
     else:
         return dt.strftime("%d/%m/%Y")
 
+def ensure_secretary_id():
+    """
+    Garante que sempre retorne um secretaryId válido
+    NUNCA retorna None!
+    """
+    user = st.session_state.user
+    data = st.session_state.data
+    
+    if user['role'] == 'ADMIN':
+        # Para ADMIN, tenta pegar primeira secretária
+        secretaries = [s for s in data['staff'] if s['role'] == 'SECRETARY']
+        if secretaries:
+            return secretaries[0]['id']
+        else:
+            # Se não houver secretária, usa ID do próprio admin
+            return user['id']
+    elif user['role'] == 'SECRETARY':
+        return user['id']
+    else:
+        # Para outros perfis, retorna secretaryId ou ID próprio
+        return user.get('secretaryId') or user['id']
+
 # --- TELA DE LOGIN ---
 
 def login_screen():
@@ -649,6 +671,10 @@ def residents_form():
             if not name:
                 st.error("⚠️ Nome é obrigatório.")
             else:
+                # Garantir secretaryId válido
+                if sec_id is None:
+                    sec_id = ensure_secretary_id()
+                
                 new_res = {
                     'name': name, 'selo': selo, 'contact': contact,
                     'originAddress': orig_addr, 'originNumber': orig_num, 'originNeighborhood': orig_bairro,
@@ -713,18 +739,6 @@ def schedule_form():
         submit = st.form_submit_button("Agendar Mudança")
         
         if submit:
-            # Obter secretaryId corretamente
-            sec_id_for_move = get_current_scope_id()
-            
-            # Se for ADMIN, pegar a primeira secretária disponível
-            if sec_id_for_move is None:
-                secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
-                if secretaries:
-                    sec_id_for_move = secretaries[0]['id']
-                else:
-                    # Se não houver secretária, usar o ID do próprio admin
-                    sec_id_for_move = st.session_state.user['id']
-            
             new_move = {
                 'residentId': res_map[res_name],
                 'date': str(m_date),
@@ -734,7 +748,7 @@ def schedule_form():
                 'coordinatorId': coord_id,
                 'driverId': drv_id,
                 'status': 'A realizar',
-                'secretaryId': sec_id_for_move
+                'secretaryId': ensure_secretary_id()  # Sempre retorna valor válido
             }
             
             if insert_move(new_move):
