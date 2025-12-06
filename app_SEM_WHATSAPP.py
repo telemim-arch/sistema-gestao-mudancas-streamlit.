@@ -713,6 +713,18 @@ def schedule_form():
         submit = st.form_submit_button("Agendar Mudança")
         
         if submit:
+            # Obter secretaryId corretamente
+            sec_id_for_move = get_current_scope_id()
+            
+            # Se for ADMIN, pegar a primeira secretária disponível
+            if sec_id_for_move is None:
+                secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
+                if secretaries:
+                    sec_id_for_move = secretaries[0]['id']
+                else:
+                    # Se não houver secretária, usar o ID do próprio admin
+                    sec_id_for_move = st.session_state.user['id']
+            
             new_move = {
                 'residentId': res_map[res_name],
                 'date': str(m_date),
@@ -722,7 +734,7 @@ def schedule_form():
                 'coordinatorId': coord_id,
                 'driverId': drv_id,
                 'status': 'A realizar',
-                'secretaryId': get_current_scope_id()
+                'secretaryId': sec_id_for_move
             }
             
             if insert_move(new_move):
