@@ -992,34 +992,7 @@ def manage_roles():
 def reports_page():
     """Página de relatórios simples (legacy)"""
     st.title("📈 Relatórios")
-    st.info("Use o novo menu 'Relatórios' para acessar analytics avançados")
-
-def whatsapp_page():
-    """Página WhatsApp simplificada"""
-    st.title("📱 Notificações WhatsApp")
-    
-    st.info("""
-    💡 **Sistema de notificações para funcionários**
-    
-    Status: Simulação ativa
-    Para produção, configure API (Twilio/Evolution)
-    """)
-    
-    staff = [s for s in st.session_state.data['staff'] if s.get('email')]
-    
-    if not staff:
-        st.warning("Nenhum funcionário cadastrado")
-        return
-    
-    recipient = st.selectbox("Destinatário", [s['name'] for s in staff])
-    message = st.text_area("Mensagem", placeholder="Digite a mensagem...")
-    
-    if st.button("📤 Enviar WhatsApp (Simulação)", type="primary"):
-        if message:
-            st.success(f"✅ Mensagem simulada para {recipient}!")
-            st.code(f"🚛 TELEMIM\\n\\n{message}")
-        else:
-            st.error("Digite uma mensagem")
+    st.info("Use o menu 'Relatórios' para acessar analytics avançados")
 
 # --- NAVEGAÇÃO PRINCIPAL ---
 
@@ -1040,7 +1013,6 @@ else:
         "Secretarias": {"icon": "🏢", "func": manage_secretaries},
         "Cargos": {"icon": "🛡️", "func": manage_roles},
         "Relatórios": {"icon": "📈", "func": reports_analytics_page},
-        "WhatsApp": {"icon": "📱", "func": whatsapp_page},
     }
     
     # Regras de Menu Dinâmico
@@ -1051,9 +1023,9 @@ else:
         options.extend(["Moradores", "Agendamento"])
         
     if user['role'] == 'ADMIN':
-        options.extend(["Funcionários", "Cargos", "Secretarias", "Relatórios", "WhatsApp"])
+        options.extend(["Funcionários", "Cargos", "Secretarias", "Relatórios"])
     elif user['role'] == 'SECRETARY':
-        options.extend(["Funcionários", "Relatórios", "WhatsApp"])
+        options.extend(["Funcionários", "Relatórios"])
         
     # Criação da Lista de Opções para o Menu
     menu_options = [op for op in options if op in menu_map]
