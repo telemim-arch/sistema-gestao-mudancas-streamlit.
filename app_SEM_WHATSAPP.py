@@ -118,7 +118,7 @@ def get_current_scope_id():
     if not user: return None
     if user['role'] == 'ADMIN': return None
     if user['role'] == 'SECRETARY': return user['id']
-    return user['secretaryId']
+    return user.get('secretaryId')  # Usar .get() para evitar KeyError
 
 def filter_by_scope(data_list, key='secretaryId'):
     scope = get_current_scope_id()
