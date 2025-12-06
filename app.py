@@ -137,27 +137,35 @@ def get_name_by_id(data_list, id_val):
     return item['name'] if item else 'N/A'
 
 def login_screen():
-    st.markdown("<h1 style='text-align: center; color: #2563eb;'>🚛 TELEMIM</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center;'>Sistema de Gestão de Mudanças</h3>", unsafe_allow_html=True)
+    # Logo centralizada no topo
+    col_logo = st.columns([1, 2, 1])
+    with col_logo[1]:
+        try:
+            st.image("Telemim_logo.png", use_container_width=True)
+        except:
+            st.markdown("<h1 style='text-align: center; color: #FF4B1F;'>🚛 TELEMIM</h1>", unsafe_allow_html=True)
+    
+    st.markdown("<h3 style='text-align: center; color: #666;'>Sistema de Gestão de Mudanças</h3>", unsafe_allow_html=True)
+    st.markdown("---")
     
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         with st.form("login_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Senha", type="password")
-            submit = st.form_submit_button("Entrar")
+            email = st.text_input("📧 Email", placeholder="seu@email.com")
+            password = st.text_input("🔑 Senha", type="password", placeholder="Digite sua senha")
+            submit = st.form_submit_button("🚪 Entrar", type="primary", use_container_width=True)
             
             if submit:
                 user = next((u for u in st.session_state.data['staff'] if u['email'].lower() == email.lower() and u['password'] == password), None)
                 if user:
                     st.session_state.user = user
-                    st.success(f"Bem-vindo, {user['name']}!")
+                    st.success(f"✅ Bem-vindo, {user['name']}!")
                     time.sleep(1)
                     st.rerun()
                 else:
-                    st.error("Credenciais inválidas.")
+                    st.error("❌ Credenciais inválidas.")
         
-        st.info("Teste: admin@telemim.com / 123")
+        st.info("💡 Teste: admin@telemim.com / 123")
 
 def dashboard():
     st.title("📊 Painel de Controle")
@@ -763,8 +771,16 @@ else:
     # Criação da Lista de Opções para o Menu
     menu_options = [op for op in options if op in menu_map]
     
-    # Sidebar minimalista (apenas usuário e sair)
+    # Sidebar com logo e usuário
     with st.sidebar:
+        # Logo pequena no topo da sidebar
+        try:
+            st.image("Telemim_logo.png", use_container_width=True)
+        except:
+            st.markdown("### 🚛 TELEMIM")
+        
+        st.markdown("---")
+        
         st.markdown(f"### 👤 {user['name']}")
         st.caption(f"🎯 {user.get('jobTitle', ROLES.get(user['role'], user['role']))}")
         
@@ -773,14 +789,6 @@ else:
         if st.button("🚪 Sair", type="primary", use_container_width=True):
             st.session_state.user = None
             st.rerun()
-    
-    # Logo no topo da página
-    col_logo = st.columns([1, 2, 1])
-    with col_logo[1]:
-        try:
-            st.image("telemim_logo.png", use_container_width=True)
-        except:
-            st.markdown("# 🚛 Telemim Mudanças")
     
     # Menu horizontal no topo
     st.markdown("---")
