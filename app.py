@@ -411,14 +411,19 @@ def schedule_form():
 def staff_management():
     st.title("👥 Recursos Humanos")
     
+    # Formulário de cadastro
     with st.form("new_staff"):
+        st.subheader("Cadastrar Novo Funcionário")
+        
         name = st.text_input("Nome Completo")
         email = st.text_input("Login (Email)")
         password = st.text_input("Senha", type="password")
         
+        # Role Select
         role_map = {r['name']: r for r in st.session_state.data['roles'] if r['permission'] not in ['ADMIN', 'SECRETARY']}
         role_name = st.selectbox("Cargo", list(role_map.keys()))
         
+        # Admin Linking
         user = st.session_state.user
         sec_id = None
         if user['role'] == 'ADMIN':
@@ -440,62 +445,81 @@ def staff_management():
                 if insert_staff(name, email, password or '123', role_permission, role_name, sec_id):
                     st.session_state.data = fetch_all_data()
                     st.success("Usuário criado!")
+                    st.rerun()
                 else:
                     st.error("Erro ao cadastrar funcionário no banco de dados.")
             else:
                 st.error("Nome obrigatório")
-
-    st.subheader("Equipe Cadastrada")
+    
+    st.divider()
+    
+    # Lista de funcionários cadastrados
+    st.subheader("Funcionários Cadastrados")
+    
     scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
-    df = pd.DataFrame(scoped_staff)
     
-    expected_cols = ['id', 'name', 'jobTitle', 'email', 'role']
-    
-    if not df.empty and all(col in df.columns for col in expected_cols):
-        column_config = {
-            "id": st.column_config.Column("ID", disabled=True),
-            "name": st.column_config.TextColumn("Nome", required=True),
-            "jobTitle": st.column_config.TextColumn("Cargo", required=True),
-            "email": st.column_config.TextColumn("Email", required=True),
-            "role": st.column_config.SelectboxColumn(
-                "Permissão",
-                options=list(ROLES.values()),
-                required=True,
-            ),
-        }
+    if scoped_staff:
+        # Criar DataFrame
+        df = pd.DataFrame(scoped_staff)
         
-        edited_df = st.data_editor(
-            df[expected_cols],
-            column_config=column_config,
-            hide_index=True,
-            use_container_width=True
-        )
+        # Colunas a serem exibidas
+        display_cols = ['id', 'name', 'jobTitle', 'email', 'role']
         
-        if not df[expected_cols].equals(edited_df):
-            try:
-                diff = edited_df.compare(df[expected_cols])
-                
-                for index in diff.index:
-                    row = edited_df.loc[index]
-                    staff_id = row['id']
-                    name = row['name']
-                    jobTitle = row['jobTitle']
-                    email = row['email']
-                    role = next(key for key, value in ROLES.items() if value == row['role'])
+        if all(col in df.columns for col in display_cols):
+            # Mapear roles para nomes legíveis
+            df['role'] = df['role'].map(ROLES)
+            
+            # Configuração de colunas
+            column_config = {
+                "id": st.column_config.NumberColumn("ID", disabled=True),
+                "name": st.column_config.TextColumn("Nome", required=True),
+                "jobTitle": st.column_config.TextColumn("Cargo", required=True),
+                "email": st.column_config.TextColumn("Email", required=True),
+                "role": st.column_config.SelectboxColumn(
+                    "Permissão",
+                    options=list(ROLES.values()),
+                    required=True,
+                ),
+            }
+            
+            # Editor de dados
+            edited_df = st.data_editor(
+                df[display_cols],
+                column_config=column_config,
+                hide_index=True,
+                use_container_width=True,
+                num_rows="fixed"
+            )
+            
+            # Detectar mudanças e salvar
+            if not df[display_cols].equals(edited_df):
+                try:
+                    diff = edited_df.compare(df[display_cols])
                     
-                    if update_staff_details(staff_id, name, jobTitle, email, role):
-                        st.success(f"Funcionário {name} (ID: {staff_id}) atualizado com sucesso!")
-                    else:
-                        st.error(f"Erro ao atualizar funcionário {name} (ID: {staff_id}).")
+                    for index in diff.index:
+                        row = edited_df.loc[index]
+                        staff_id = row['id']
+                        name = row['name']
+                        jobTitle = row['jobTitle']
+                        email = row['email']
                         
-                st.session_state.data = fetch_all_data()
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"Erro ao processar a edição: {e}")
-        
+                        # Converte o nome da permissão para a chave
+                        role = next(key for key, value in ROLES.items() if value == row['role'])
+                        
+                        if update_staff_details(staff_id, name, jobTitle, email, role):
+                            st.success(f"Funcionário {name} (ID: {staff_id}) atualizado com sucesso!")
+                        else:
+                            st.error(f"Erro ao atualizar funcionário {name} (ID: {staff_id}).")
+                            
+                    st.session_state.data = fetch_all_data()
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Erro ao processar a edição: {e}")
+        else:
+            st.warning("Dados incompletos na tabela de funcionários.")
     else:
-        st.info("Nenhum funcionário encontrado.")
+        st.info("Nenhum funcionário cadastrado ainda.")
 
 def manage_secretaries():
     st.title("🏢 Gestão de Secretarias")
