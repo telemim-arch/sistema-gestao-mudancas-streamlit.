@@ -705,12 +705,14 @@ def manage_roles():
 
 # SUBSTITUIR A SEÇÃO DE NAVEGAÇÃO PRINCIPAL NO FINAL DO ARQUIVO
 
+# SUBSTITUIR A NAVEGAÇÃO NO FINAL DO app.py
+
 if not st.session_state.user:
     login_screen()
 else:
     user = st.session_state.user
     
-    # Mapeamento de Opções com Ícones e Emojis
+    # Mapeamento de Opções com Ícones
     menu_map = {
         "Gerenciamento": {"icon": "📊", "func": dashboard},
         "Ordens de Serviço": {"icon": "📦", "func": manage_moves},
@@ -737,20 +739,10 @@ else:
     # Criação da Lista de Opções para o Menu
     menu_options = [op for op in options if op in menu_map]
     
-    # Sidebar de Usuário com ícones
+    # Sidebar minimalista (apenas usuário e sair)
     with st.sidebar:
         st.markdown(f"### 👤 {user['name']}")
-        st.caption(f"🎯 Cargo: {user.get('jobTitle', user['role'])}")
-        
-        st.divider()
-        
-        # Menu de navegação na sidebar
-        st.markdown("### 📑 Menu")
-        
-        for option in menu_options:
-            icon = menu_map[option]['icon']
-            if st.button(f"{icon} {option}", key=f"menu_{option}", use_container_width=True):
-                st.session_state['current_page'] = option
+        st.caption(f"🎯 {user.get('jobTitle', ROLES.get(user['role'], user['role']))}")
         
         st.divider()
         
@@ -758,13 +750,14 @@ else:
             st.session_state.user = None
             st.rerun()
     
-    # Renderizar página selecionada
-    current_page = st.session_state.get('current_page', 'Gerenciamento')
+    # Menu horizontal no topo
+    st.markdown("---")
     
-    # Garantir que a página atual está nas opções disponíveis
-    if current_page not in menu_options:
-        current_page = menu_options[0]
-        st.session_state['current_page'] = current_page
+    # Criar abas com ícones e nomes
+    tab_labels = [f"{menu_map[op]['icon']} {op}" for op in menu_options]
+    tabs = st.tabs(tab_labels)
     
-    # Executar função da página
-    menu_map[current_page]['func']()
+    # Renderizar cada aba
+    for i, option in enumerate(menu_options):
+        with tabs[i]:
+            menu_map[option]['func']()

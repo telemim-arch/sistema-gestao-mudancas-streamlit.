@@ -218,17 +218,72 @@ def update_staff_details(staff_id, name, jobTitle, email, role):
 
 # --- Funções de DELETE ---
 
+# SUBSTITUA AS FUNÇÕES DE DELETE NO connection.py
+
 def delete_staff(staff_id):
-    """Deleta um funcionário."""
-    query = "DELETE FROM staff WHERE id = %s"
-    params = (staff_id,)
-    return execute_query(query, params)
+    """
+    Deleta um funcionário.
+    Antes de deletar, atualiza os registros que referenciam este funcionário.
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    
+    try:
+        cur = conn.cursor()
+        
+        # 1. Atualizar staff que tem este funcionário como secretária (setar NULL)
+        cur.execute("UPDATE staff SET secretaryId = NULL WHERE secretaryId = %s", (staff_id,))
+        
+        # 2. Atualizar residents que tem este funcionário como secretária (setar NULL)
+        cur.execute("UPDATE residents SET secretaryId = NULL WHERE secretaryId = %s", (staff_id,))
+        
+        # 3. Atualizar moves que tem este funcionário em qualquer função
+        cur.execute("UPDATE moves SET supervisorId = NULL WHERE supervisorId = %s", (staff_id,))
+        cur.execute("UPDATE moves SET coordinatorId = NULL WHERE coordinatorId = %s", (staff_id,))
+        cur.execute("UPDATE moves SET driverId = NULL WHERE driverId = %s", (staff_id,))
+        cur.execute("UPDATE moves SET secretaryId = NULL WHERE secretaryId = %s", (staff_id,))
+        
+        # 4. Agora pode deletar o funcionário
+        cur.execute("DELETE FROM staff WHERE id = %s", (staff_id,))
+        
+        conn.commit()
+        cur.close()
+        return True
+        
+    except Exception as e:
+        st.error(f"Erro ao deletar funcionário: {e}")
+        if conn:
+            conn.rollback()
+        return False
 
 def delete_resident(resident_id):
-    """Deleta um morador."""
-    query = "DELETE FROM residents WHERE id = %s"
-    params = (resident_id,)
-    return execute_query(query, params)
+    """
+    Deleta um morador.
+    Antes de deletar, remove as ordens de serviço associadas.
+    """
+    conn = get_connection()
+    if conn is None:
+        return False
+    
+    try:
+        cur = conn.cursor()
+        
+        # 1. Deletar ordens de serviço deste morador
+        cur.execute("DELETE FROM moves WHERE residentId = %s", (resident_id,))
+        
+        # 2. Agora pode deletar o morador
+        cur.execute("DELETE FROM residents WHERE id = %s", (resident_id,))
+        
+        conn.commit()
+        cur.close()
+        return True
+        
+    except Exception as e:
+        st.error(f"Erro ao deletar morador: {e}")
+        if conn:
+            conn.rollback()
+        return False
 
 def delete_move(move_id):
     """Deleta uma ordem de serviço."""
