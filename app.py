@@ -21,6 +21,24 @@ st.markdown("""
         width: 100%;
         border-radius: 8px;
     }
+    /* Botões primários em azul */
+    .stButton>button[kind="primary"] {
+        background-color: #1E88E5 !important;
+        color: white !important;
+        border: none !important;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background-color: #1565C0 !important;
+        border: none !important;
+    }
+    /* Botões de form em azul */
+    .stButton>button[type="submit"] {
+        background-color: #1E88E5 !important;
+        color: white !important;
+    }
+    .stButton>button[type="submit"]:hover {
+        background-color: #1565C0 !important;
+    }
     [data-testid="stSidebar"] {
         background-color: #f8f9fa;
     }
@@ -137,11 +155,11 @@ def get_name_by_id(data_list, id_val):
     return item['name'] if item else 'N/A'
 
 def login_screen():
-    # Logo centralizada no topo
-    col_logo = st.columns([1, 2, 1])
+    # Logo centralizada no topo (menor)
+    col_logo = st.columns([1, 1, 1])
     with col_logo[1]:
         try:
-            st.image("Telemim_logo.png", use_container_width=True)
+            st.image("Telemim_logo.png", width=250)
         except:
             st.markdown("<h1 style='text-align: center; color: #FF4B1F;'>🚛 TELEMIM</h1>", unsafe_allow_html=True)
     
@@ -173,7 +191,7 @@ def dashboard():
     scope_id = get_current_scope_id()
     moves = filter_by_scope(st.session_state.data['moves'])
     
-    # KPIs com Cards Melhorados
+    # KPIs com Cards Não Interativos
     col1, col2, col3 = st.columns(3)
     
     # Contagem de Status
@@ -184,20 +202,14 @@ def dashboard():
     # Inicializa o filtro de status na sessão
     if 'dashboard_filter_status' not in st.session_state:
         st.session_state.dashboard_filter_status = "Todos"
-        
-    # Função para mudar o filtro ao clicar no card
-    def set_filter(status):
-        st.session_state.dashboard_filter_status = status
-        
-    # Cards com métricas usando st.metric (corrigido)
+    
+    # Cards com métricas (sem botões)
     with col1:
         st.metric(
             label="📋 A Realizar",
             value=todo,
             delta=None
         )
-        if st.button("Ver Detalhes", key="btn_todo", use_container_width=True):
-            set_filter("A realizar")
     
     with col2:
         st.metric(
@@ -205,8 +217,6 @@ def dashboard():
             value=doing,
             delta=None
         )
-        if st.button("Ver Detalhes", key="btn_doing", use_container_width=True):
-            set_filter("Realizando")
     
     with col3:
         st.metric(
@@ -214,8 +224,6 @@ def dashboard():
             value=done,
             delta=None
         )
-        if st.button("Ver Detalhes", key="btn_done", use_container_width=True):
-            set_filter("Concluído")
             
     st.divider()
     
