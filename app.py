@@ -24,6 +24,13 @@ st.markdown("""
     [data-testid="stSidebar"] {
         background-color: #f8f9fa;
     }
+    .logo-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 10px 0;
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -766,6 +773,14 @@ else:
         if st.button("🚪 Sair", type="primary", use_container_width=True):
             st.session_state.user = None
             st.rerun()
+    
+    # Logo no topo da página
+    col_logo = st.columns([1, 2, 1])
+    with col_logo[1]:
+        try:
+            st.image("telemim_logo.png", use_container_width=True)
+        except:
+            st.markdown("# 🚛 Telemim Mudanças")
     
     # Menu horizontal no topo
     st.markdown("---")
