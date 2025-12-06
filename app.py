@@ -1,8 +1,29 @@
+
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
-from connection import fetch_all_data, init_db_structure, insert_staff, insert_resident, insert_move, update_move_details, get_connection, delete_staff, update_staff_details
+import calendar
+from connection import (
+    fetch_all_data, init_db_structure, insert_staff, insert_resident, 
+    insert_move, update_move_details, get_connection, delete_staff, 
+    update_staff_details,
+    # NOVAS FUNÇÕES
+    insert_notification, get_user_notifications, mark_notification_read,
+    get_unread_count, insert_attachment, get_attachments, 
+    get_attachment_data, delete_attachment, get_report_data
+)
+
+# Imports adicionais para novas funcionalidades
+try:
+    from PIL import Image
+    import io
+    import base64
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from io import BytesIO
+except ImportError:
+    pass  # Será instalado via requirements.txt
 
 # --- CONFIGURAÇÕES INICIAIS ---
 st.set_page_config(page_title="Telemim Mudanças", page_icon="🚛", layout="wide")
@@ -31,14 +52,6 @@ st.markdown("""
         background-color: #1565C0 !important;
         border: none !important;
     }
-    /* Botões de form em azul */
-    .stButton>button[type="submit"] {
-        background-color: #1E88E5 !important;
-        color: white !important;
-    }
-    .stButton>button[type="submit"]:hover {
-        background-color: #1565C0 !important;
-    }
     [data-testid="stSidebar"] {
         background-color: #f8f9fa;
     }
@@ -58,67 +71,28 @@ ROLES = {
     'SECRETARY': 'Secretária',
     'SUPERVISOR': 'Supervisor',
     'COORDINATOR': 'Coordenador',
-    'DRIVER': 'Motorista',
-    'HELPER': 'Ajudante'
+    'DRIVER': 'Motorista'
 }
 
-# --- INICIALIZAÇÃO DO BANCO DE DADOS E DADOS (SESSION STATE) ---
+# --- INICIALIZAÇÃO DO ESTADO ---
 if 'data' not in st.session_state:
     conn = get_connection()
+    
     if conn:
         init_db_structure(conn)
         data = fetch_all_data()
         
-        if not data['staff']:
-            st.info("Banco de dados vazio. Inserindo dados iniciais de demonstração...")
-            
-            initial_staff = [
-                {'name': 'Admin Geral', 'email': 'admin@telemim.com', 'password': '123', 'role': 'ADMIN', 'jobTitle': 'Administrador', 'secretaryId': None, 'branchName': None},
-                {'name': 'Ana Secretária', 'email': 'ana@telemim.com', 'password': '123', 'role': 'SECRETARY', 'jobTitle': 'Secretária', 'secretaryId': None, 'branchName': 'Matriz'},
-            ]
-            
-            for s in initial_staff:
-                insert_staff(s['name'], s['email'], s['password'], s['role'], s['jobTitle'], s['secretaryId'], s['branchName'])
-            
-            data = fetch_all_data()
-            staff_map = {s['name']: s['id'] for s in data['staff']}
-            ana_id = staff_map.get('Ana Secretária')
-            
-            if ana_id:
-                initial_staff_linked = [
-                    {'name': 'Carlos Motorista', 'email': 'carlos@telemim.com', 'password': '123', 'role': 'DRIVER', 'jobTitle': 'Motorista', 'secretaryId': ana_id, 'branchName': None},
-                    {'name': 'Maria Supervisora', 'email': 'maria@telemim.com', 'password': '123', 'role': 'SUPERVISOR', 'jobTitle': 'Supervisor', 'secretaryId': ana_id, 'branchName': None}
-                ]
-                for s in initial_staff_linked:
-                    insert_staff(s['name'], s['email'], s['password'], s['role'], s['jobTitle'], s['secretaryId'], s['branchName'])
-            
-            data = fetch_all_data()
-            staff_map = {s['name']: s['id'] for s in data['staff']}
-            ana_id = staff_map.get('Ana Secretária')
-            carlos_id = staff_map.get('Carlos Motorista')
-            maria_id = staff_map.get('Maria Supervisora')
-            
-            if ana_id:
-                initial_resident = {
-                    'name': 'João Silva', 'selo': 'A101', 'contact': '1199999999', 
-                    'originAddress': 'Rua A, 100', 'destAddress': 'Rua B, 200', 'observation': 'Piano de cauda', 
-                    'moveDate': '2023-12-01', 'moveTime': '08:00', 'secretaryId': ana_id,
-                    'originNumber': 'S/N', 'originNeighborhood': 'Centro',
-                    'destNumber': 'S/N', 'destNeighborhood': 'Bairro Novo'
-                }
-                insert_resident(initial_resident)
-                
-                data = fetch_all_data()
-                resident_map = {r['name']: r['id'] for r in data['residents']}
-                joao_id = resident_map.get('João Silva')
-                
-                if joao_id and carlos_id and maria_id:
-                    initial_move = {
-                        'residentId': joao_id, 'date': '2023-12-01', 'time': '08:00', 'metragem': 15.0, 
-                        'supervisorId': maria_id, 'coordinatorId': None, 'driverId': carlos_id, 
-                        'status': 'A realizar', 'secretaryId': ana_id, 'completionDate': None, 'completionTime': None
-                    }
-                    insert_move(initial_move)
+        if not data or not data.get('staff'):
+            admin_user = {
+                'name': 'Administrador',
+                'email': 'admin@telemim.com',
+                'password': '123',
+                'role': 'ADMIN',
+                'jobTitle': 'Administrador',
+                'secretaryId': None
+            }
+            insert_staff(admin_user['name'], admin_user['email'], admin_user['password'], 
+                        admin_user['role'], admin_user['jobTitle'], admin_user['secretaryId'])
             
             data = fetch_all_data()
             
@@ -132,11 +106,13 @@ if 'data' not in st.session_state:
         
         st.session_state.data = data
     else:
-        st.error("Não foi possível conectar ao banco de dados. Verifique suas credenciais em .streamlit/secrets.toml.")
+        st.error("Não foi possível conectar ao banco de dados.")
         st.session_state.data = {'staff': [], 'residents': [], 'moves': [], 'roles': []}
 
 if 'user' not in st.session_state:
     st.session_state.user = None
+
+# --- FUNÇÕES AUXILIARES ---
 
 def get_current_scope_id():
     user = st.session_state.user
@@ -151,8 +127,32 @@ def filter_by_scope(data_list, key='secretaryId'):
     return [item for item in data_list if str(item.get(key)) == str(scope) or str(item.get('id')) == str(scope)]
 
 def get_name_by_id(data_list, id_val):
-    item = next((x for x in data_list if str(x['id']) == str(id_val)), None)
-    return item['name'] if item else 'N/A'
+    if not id_val:
+        return "N/A"
+    item = next((x for x in data_list if x['id'] == id_val), None)
+    return item['name'] if item else "N/A"
+
+def get_time_ago(dt):
+    """Retorna tempo relativo"""
+    now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
+    diff = now - dt
+    seconds = diff.total_seconds()
+    
+    if seconds < 60:
+        return "agora mesmo"
+    elif seconds < 3600:
+        minutes = int(seconds / 60)
+        return f"há {minutes} minuto{'s' if minutes > 1 else ''}"
+    elif seconds < 86400:
+        hours = int(seconds / 3600)
+        return f"há {hours} hora{'s' if hours > 1 else ''}"
+    elif seconds < 604800:
+        days = int(seconds / 86400)
+        return f"há {days} dia{'s' if days > 1 else ''}"
+    else:
+        return dt.strftime("%d/%m/%Y")
+
+# --- TELA DE LOGIN ---
 
 def login_screen():
     # Logo centralizada no topo (menor)
@@ -184,6 +184,8 @@ def login_screen():
                     st.error("❌ Credenciais inválidas.")
         
         st.info("💡 Teste: admin@telemim.com / 123")
+
+# --- DASHBOARD ---
 
 def dashboard():
     st.title("📊 Painel de Controle")
@@ -228,42 +230,41 @@ def dashboard():
     st.divider()
     
     # Filtros
-    st.subheader("🔎 Buscar Mudanças")
-    c1, c2, c3 = st.columns(3)
-    f_name = c1.text_input("Nome do Cliente", placeholder="Digite o nome...")
+    st.subheader("🔍 Buscar Mudanças")
+    col_f1, col_f2, col_f3 = st.columns(3)
     
-    # O filtro de status agora usa o valor da sessão
-    f_status = c2.selectbox(
-        "Status", 
-        ["Todos", "A realizar", "Realizando", "Concluído"], 
-        index=["Todos", "A realizar", "Realizando", "Concluído"].index(st.session_state.dashboard_filter_status),
-        key="status_selectbox"
-    )
+    with col_f1:
+        search_query = st.text_input("Buscar por nome", "")
     
-    # Atualiza o filtro da sessão se o selectbox for alterado
-    if f_status != st.session_state.dashboard_filter_status:
-        st.session_state.dashboard_filter_status = f_status
-        
-    f_date = c3.date_input("Data", value=None)
+    with col_f2:
+        filter_status = st.selectbox("Filtrar por Status", ["Todos", "A realizar", "Realizando", "Concluído"])
     
-    # Aplicar Filtros
+    with col_f3:
+        filter_date = st.date_input("Filtrar por Data", value=None)
+    
+    # Aplicar filtros
     filtered = moves
-    if st.session_state.dashboard_filter_status != "Todos":
-        filtered = [m for m in filtered if m['status'] == st.session_state.dashboard_filter_status]
-    if f_date:
-        filtered = [m for m in filtered if m['date'] == str(f_date)]
-    if f_name:
-        filtered = [m for m in filtered if f_name.lower() in get_name_by_id(st.session_state.data['residents'], m['residentId']).lower()]
-
-    # Exibir Tabela
+    
+    if search_query:
+        residents = st.session_state.data['residents']
+        filtered = [m for m in filtered if any(search_query.lower() in get_name_by_id(residents, m['residentId']).lower())]
+    
+    if filter_status != "Todos":
+        filtered = [m for m in filtered if m['status'] == filter_status]
+    
+    if filter_date:
+        filtered = [m for m in filtered if str(m.get('date')) == str(filter_date)]
+    
+    # Exibir resultados
     if filtered:
         df = pd.DataFrame(filtered)
+        
         if 'residentId' in df.columns:
-            df['Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
-            df_display = df[['id', 'date', 'Cliente', 'status', 'metragem']]
+            df['Nome Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
+            df['Supervisor'] = df['supervisorId'].apply(lambda x: get_name_by_id(st.session_state.data['staff'], x))
             
-            # Renomear colunas
-            df_display.columns = ['OS #', 'Data', 'Cliente', 'Status', 'Volume (m³)']
+            df_display = df[['id', 'Nome Cliente', 'date', 'time', 'status', 'Supervisor']].copy()
+            df_display.columns = ['OS #', 'Cliente', 'Data', 'Hora', 'Status', 'Supervisor']
             
             st.dataframe(df_display, use_container_width=True, hide_index=True)
             st.caption(f"📊 Mostrando {len(filtered)} de {len(moves)} ordem(ns) de serviço")
@@ -272,6 +273,274 @@ def dashboard():
     else:
         st.info("💡 Nenhuma mudança encontrada com esses filtros.")
 
+# --- CALENDÁRIO VISUAL ---
+
+def calendar_view():
+    """Calendário Visual de Mudanças"""
+    st.title("📅 Calendário de Mudanças")
+    
+    # Seletor de mês/ano
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col1:
+        year = st.selectbox("Ano", range(2024, 2027), index=1)
+    
+    with col2:
+        months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+        month = st.selectbox("Mês", range(1, 13), format_func=lambda x: months[x-1], 
+                            index=datetime.now().month-1)
+    
+    with col3:
+        view_mode = st.radio("Visualização", ["Mensal", "Lista"], horizontal=True)
+    
+    # Buscar mudanças do mês
+    moves = filter_by_scope(st.session_state.data['moves'])
+    
+    # Filtrar por mês
+    moves_month = []
+    for m in moves:
+        if m.get('date'):
+            try:
+                move_date = datetime.strptime(str(m['date']), '%Y-%m-%d')
+                if move_date.year == year and move_date.month == month:
+                    moves_month.append(m)
+            except:
+                pass
+    
+    if view_mode == "Mensal":
+        render_monthly_calendar(year, month, moves_month)
+    else:
+        render_list_view(moves_month)
+    
+    # Legenda
+    st.markdown("---")
+    col_leg1, col_leg2, col_leg3 = st.columns(3)
+    with col_leg1:
+        st.markdown("🟡 **A Realizar**")
+    with col_leg2:
+        st.markdown("🔵 **Realizando**")
+    with col_leg3:
+        st.markdown("🟢 **Concluída**")
+
+def render_monthly_calendar(year, month, moves):
+    """Renderiza calendário mensal"""
+    cal = calendar.monthcalendar(year, month)
+    
+    # Agrupar por dia
+    moves_by_day = {}
+    for move in moves:
+        try:
+            day = datetime.strptime(str(move['date']), '%Y-%m-%d').day
+            if day not in moves_by_day:
+                moves_by_day[day] = []
+            moves_by_day[day].append(move)
+        except:
+            pass
+    
+    # Header
+    weekdays = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM']
+    cols_header = st.columns(7)
+    for i, day in enumerate(weekdays):
+        with cols_header[i]:
+            st.markdown(f"**{day}**")
+    
+    # Semanas
+    for week in cal:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            with cols[i]:
+                if day == 0:
+                    st.markdown("")
+                else:
+                    day_moves = moves_by_day.get(day, [])
+                    
+                    if day_moves:
+                        status_counts = {}
+                        for m in day_moves:
+                            status = m.get('status', 'A realizar')
+                            status_counts[status] = status_counts.get(status, 0) + 1
+                        
+                        if status_counts.get('Concluído', 0) == len(day_moves):
+                            emoji = "🟢"
+                        elif status_counts.get('Realizando', 0) > 0:
+                            emoji = "🔵"
+                        else:
+                            emoji = "🟡"
+                        
+                        st.markdown(f"### {emoji} {day}")
+                        st.caption(f"{len(day_moves)} OS")
+                    else:
+                        st.markdown(f"### {day}")
+
+def render_list_view(moves):
+    """Visualização em lista"""
+    if not moves:
+        st.info("Nenhuma mudança agendada neste mês")
+        return
+    
+    # Ordenar por data
+    moves_sorted = sorted(moves, key=lambda x: x.get('date', ''))
+    
+    for move in moves_sorted:
+        residents = st.session_state.data['residents']
+        resident = next((r for r in residents if r['id'] == move['residentId']), None)
+        
+        if resident:
+            status_emoji = {
+                'A realizar': '🟡',
+                'Realizando': '🔵',
+                'Concluído': '🟢'
+            }
+            emoji = status_emoji.get(move['status'], '⚪')
+            
+            with st.expander(f"{emoji} **OS #{move['id']}** - {resident['name']} - {move['date']}", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**⏰ Horário:** {move['time']}")
+                    st.markdown(f"**📍 Origem:** {resident.get('originAddress', 'N/A')}")
+                with col2:
+                    st.markdown(f"**📊 Status:** {move['status']}")
+                    st.markdown(f"**🎯 Destino:** {resident.get('destAddress', 'N/A')}")
+
+# --- CENTRAL DE NOTIFICAÇÕES ---
+
+def notifications_center():
+    """Central de Notificações"""
+    st.title("🔔 Central de Notificações")
+    
+    user_id = st.session_state.user['id']
+    
+    tab1, tab2 = st.tabs(["📬 Não Lidas", "📋 Todas"])
+    
+    with tab1:
+        show_notifications(user_id, unread_only=True)
+    
+    with tab2:
+        show_notifications(user_id, unread_only=False)
+
+def show_notifications(user_id, unread_only=False):
+    """Exibe notificações"""
+    notifications = get_user_notifications(user_id, unread_only)
+    
+    if not notifications:
+        st.info("📭 Nenhuma notificação" + (" não lida" if unread_only else ""))
+        return
+    
+    for notif in notifications:
+        icons = {'info': 'ℹ️', 'success': '✅', 'warning': '⚠️', 'error': '❌'}
+        icon = icons.get(notif.get('type', 'info'), 'ℹ️')
+        
+        col1, col2 = st.columns([10, 2])
+        
+        with col1:
+            if not notif.get('isread'):
+                st.markdown(f"{icon} **{notif['title']}**")
+            else:
+                st.markdown(f"{icon} {notif['title']}")
+            
+            st.caption(notif['message'])
+            
+            if notif.get('createdat'):
+                created = notif['createdat']
+                if isinstance(created, str):
+                    try:
+                        created = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    except:
+                        created = datetime.now()
+                st.caption(f"🕐 {get_time_ago(created)}")
+        
+        with col2:
+            if not notif.get('isread'):
+                if st.button("✓", key=f"read_{notif['id']}", use_container_width=True):
+                    mark_notification_read(notif['id'])
+                    st.toast("Marcada como lida")
+                    time.sleep(0.5)
+                    st.rerun()
+        
+        st.markdown("---")
+
+def notification_badge():
+    """Badge de notificações (para sidebar)"""
+    try:
+        user_id = st.session_state.user['id']
+        unread = get_unread_count(user_id)
+        return unread
+    except:
+        return 0
+
+# --- RELATÓRIOS E ANALYTICS ---
+
+def reports_analytics_page():
+    """Página de Relatórios"""
+    st.title("📊 Relatórios e Analytics")
+    
+    # Filtros
+    with st.expander("🔍 Filtros", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            start_date = st.date_input("Data Início", value=datetime.now() - timedelta(days=30))
+        
+        with col2:
+            end_date = st.date_input("Data Fim", value=datetime.now())
+    
+    # Buscar dados
+    try:
+        df = get_report_data(start_date, end_date)
+    except:
+        df = pd.DataFrame()
+    
+    if df.empty:
+        st.warning("Nenhum dado encontrado para o período selecionado")
+        return
+    
+    # KPIs
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total de OSs", len(df))
+    
+    with col2:
+        completed = len(df[df['status'] == 'Concluído'])
+        st.metric("Concluídas", completed)
+    
+    with col3:
+        rate = (completed / len(df) * 100) if len(df) > 0 else 0
+        st.metric("Taxa Conclusão", f"{rate:.1f}%")
+    
+    with col4:
+        pending = len(df[df['status'] == 'A realizar'])
+        st.metric("Pendentes", pending)
+    
+    st.markdown("---")
+    
+    # Tentar criar gráfico
+    try:
+        st.subheader("📊 Distribuição por Status")
+        status_counts = df['status'].value_counts()
+        
+        fig = px.pie(
+            values=status_counts.values,
+            names=status_counts.index,
+            color_discrete_sequence=['#FFC107', '#2196F3', '#4CAF50']
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.info("Gráfico não disponível (instale plotly)")
+    
+    # Botão de exportar
+    st.markdown("---")
+    if st.button("📥 Exportar para CSV", type="primary"):
+        csv = df.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="⬇️ Download CSV",
+            data=csv,
+            file_name=f"relatorio_{start_date}_{end_date}.csv",
+            mime="text/csv"
+        )
+
+# --- GESTÃO DE MUDANÇAS ---
 
 def manage_moves():
     st.title("📦 Ordens de Serviço")
@@ -311,24 +580,13 @@ def manage_moves():
         
         if not df.equals(edited_df):
             success = True
-            for index, row in edited_df.iterrows():
-                original_row = df.loc[index]
-                editable_cols = ['date', 'time', 'status', 'metragem', 'completionDate', 'completionTime']
-                modified = any(original_row[col] != row[col] for col in editable_cols)
+            for idx, row in edited_df.iterrows():
+                move_id = row['id']
+                original_row = df[df['id'] == move_id].iloc[0]
                 
-                if modified:
-                    completion_date = str(row['completionDate']) if pd.notna(row['completionDate']) else None
-                    completion_time = str(row['completionTime']) if pd.notna(row['completionTime']) else None
-                    
-                    if not update_move_details(
-                        move_id=row['id'],
-                        metragem=row['metragem'],
-                        status=row['status'],
-                        completionDate=completion_date,
-                        completionTime=completion_time
-                    ):
+                if not original_row.equals(row):
+                    if not update_move_details(move_id, dict(row)):
                         success = False
-                        st.error(f"Erro ao atualizar OS #{row['id']} no banco de dados.")
                         break
             
             if success:
@@ -336,6 +594,8 @@ def manage_moves():
                 st.success("Alterações salvas automaticamente no banco de dados!")
     else:
         st.info("Nenhuma Ordem de Serviço encontrada.")
+
+# --- FORMULÁRIOS ---
 
 def residents_form():
     st.title("🏠 Cadastro de Moradores")
@@ -409,7 +669,6 @@ def residents_form():
                 else:
                     st.error("❌ Erro ao cadastrar morador no banco de dados.")
 
-
 def schedule_form():
     st.title("🗓️ Agendamento de OS")
     
@@ -425,60 +684,54 @@ def schedule_form():
         res_name = st.selectbox("Morador", list(res_map.keys()))
         
         c1, c2 = st.columns(2)
-        date = c1.date_input("Data")
-        time_val = c2.time_input("Hora")
+        m_date = c1.date_input("Data da Mudança")
+        m_time = c2.time_input("Hora")
+        
+        metragem = st.number_input("Volume (m³)", min_value=0.0, step=0.5)
         
         st.subheader("Equipe")
-        supervisors = [s for s in scoped_staff if s['role'] == 'SUPERVISOR']
-        coordinators = [s for s in scoped_staff if s['role'] == 'COORDINATOR']
-        drivers = [s for s in scoped_staff if s['role'] == 'DRIVER']
         
-        sup_map = {s['name']: s['id'] for s in supervisors}
-        coord_map = {s['name']: s['id'] for s in coordinators}
-        drive_map = {s['name']: s['id'] for s in drivers}
+        supervisors = [s for s in scoped_staff if s['role'] in ['SUPERVISOR', 'ADMIN']]
+        coordinators = [s for s in scoped_staff if s['role'] in ['COORDINATOR', 'ADMIN']]
+        drivers = [s for s in scoped_staff if s['role'] in ['DRIVER']]
         
-        sup_name = st.selectbox("Supervisor (Obrigatório)", list(sup_map.keys()) if sup_map else [])
-        coord_name = st.selectbox("Coordenador", ["Nenhum"] + list(coord_map.keys()))
-        drive_name = st.selectbox("Motorista", ["Nenhum"] + list(drive_map.keys()))
+        sup_id = None
+        coord_id = None
+        drv_id = None
         
-        user = st.session_state.user
-        sec_id = get_current_scope_id()
+        if supervisors:
+            sup_name = st.selectbox("Supervisor", [s['name'] for s in supervisors])
+            sup_id = next((s['id'] for s in supervisors if s['name'] == sup_name), None)
         
-        if user['role'] == 'ADMIN':
-            secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
-            sec_options = {}
-            for s in secretaries:
-                key = s.get('branchName') or s['name']
-                sec_options[key] = s['id']
-            selected_sec_name = st.selectbox("Vincular à Secretária (Admin)", list(sec_options.keys()))
-            if selected_sec_name: sec_id = sec_options[selected_sec_name]
-            
-        if sec_id is None:
-            st.error("Erro: O ID da Secretária não foi definido. O Admin deve selecionar uma Secretária.")
-            
-        submit = st.form_submit_button("Confirmar Agendamento")
+        if coordinators:
+            coord_name = st.selectbox("Coordenador", [s['name'] for s in coordinators])
+            coord_id = next((s['id'] for s in coordinators if s['name'] == coord_name), None)
+        
+        if drivers:
+            drv_name = st.selectbox("Motorista", [s['name'] for s in drivers])
+            drv_id = next((s['id'] for s in drivers if s['name'] == drv_name), None)
+        
+        submit = st.form_submit_button("Agendar Mudança")
         
         if submit:
-            if not res_name or not sup_name:
-                st.error("Selecione o Morador e o Supervisor.")
+            new_move = {
+                'residentId': res_map[res_name],
+                'date': str(m_date),
+                'time': str(m_time),
+                'metragem': metragem,
+                'supervisorId': sup_id,
+                'coordinatorId': coord_id,
+                'driverId': drv_id,
+                'status': 'A realizar',
+                'secretaryId': get_current_scope_id()
+            }
+            
+            if insert_move(new_move):
+                st.session_state.data = fetch_all_data()
+                st.success("Mudança agendada com sucesso!")
+                st.rerun()
             else:
-                resident_id = res_map[res_name]
-                supervisor_id = sup_map[sup_name]
-                driver_id = drive_map.get(drive_name)
-                coordinator_id = coord_map.get(coord_name)
-                
-                new_move = {
-                    'residentId': resident_id, 'date': str(date), 'time': str(time_val),
-                    'metragem': 0.0,
-                    'supervisorId': supervisor_id, 'coordinatorId': coordinator_id,
-                    'driverId': driver_id, 'status': 'A realizar', 'secretaryId': sec_id,
-                }
-                
-                if insert_move(new_move):
-                    st.session_state.data = fetch_all_data()
-                    st.success("Ordem de Serviço agendada com sucesso!")
-                else:
-                    st.error("Erro ao agendar Ordem de Serviço no banco de dados.")
+                st.error("Erro ao agendar mudança.")
 
 def staff_management():
     st.title("👥 Recursos Humanos")
@@ -643,8 +896,6 @@ def staff_management():
     else:
         st.info("💡 Nenhum funcionário cadastrado no seu escopo ainda.")
 
-
-
 def manage_secretaries():
     st.title("🏢 Gestão de Secretarias")
     
@@ -722,20 +973,16 @@ def manage_secretaries():
     else:
         st.info("💡 Nenhuma secretaria cadastrada ainda.")
 
-
-def reports_page():
-    st.title("📈 Relatórios e Análises")
-    st.info("Funcionalidade em desenvolvimento. Aqui você poderá gerar relatórios de OS, desempenho da equipe e exportar dados.")
-
 def manage_roles():
-    st.title("🛡️ Cargos")
+    st.title("🛡️ Gestão de Cargos")
     
-    with st.form("new_role"):
+    st.info("Cargos padrão do sistema. Para adicionar novos cargos, contate o administrador.")
+    
+    if st.button("Adicionar Novo Cargo (Admin)", type="secondary"):
         name = st.text_input("Nome do Cargo")
-        perm = st.selectbox("Permissão do Sistema", list(ROLES.values()))
-        submit = st.form_submit_button("Salvar Cargo")
+        perm = st.selectbox("Permissão", list(ROLES.keys()))
         
-        if submit:
+        if st.button("Criar"):
             if name:
                 perm_key = next(key for key, value in ROLES.items() if value == perm)
                 st.session_state.data['roles'].append({'id': int(time.time()), 'name': name, 'permission': perm_key})
@@ -743,9 +990,39 @@ def manage_roles():
             
     st.table(pd.DataFrame(st.session_state.data['roles']))
 
-# SUBSTITUIR A SEÇÃO DE NAVEGAÇÃO PRINCIPAL NO FINAL DO ARQUIVO
+def reports_page():
+    """Página de relatórios simples (legacy)"""
+    st.title("📈 Relatórios")
+    st.info("Use o novo menu 'Relatórios' para acessar analytics avançados")
 
-# SUBSTITUIR A NAVEGAÇÃO NO FINAL DO app.py
+def whatsapp_page():
+    """Página WhatsApp simplificada"""
+    st.title("📱 Notificações WhatsApp")
+    
+    st.info("""
+    💡 **Sistema de notificações para funcionários**
+    
+    Status: Simulação ativa
+    Para produção, configure API (Twilio/Evolution)
+    """)
+    
+    staff = [s for s in st.session_state.data['staff'] if s.get('email')]
+    
+    if not staff:
+        st.warning("Nenhum funcionário cadastrado")
+        return
+    
+    recipient = st.selectbox("Destinatário", [s['name'] for s in staff])
+    message = st.text_area("Mensagem", placeholder="Digite a mensagem...")
+    
+    if st.button("📤 Enviar WhatsApp (Simulação)", type="primary"):
+        if message:
+            st.success(f"✅ Mensagem simulada para {recipient}!")
+            st.code(f"🚛 TELEMIM\\n\\n{message}")
+        else:
+            st.error("Digite uma mensagem")
+
+# --- NAVEGAÇÃO PRINCIPAL ---
 
 if not st.session_state.user:
     login_screen()
@@ -756,32 +1033,35 @@ else:
     menu_map = {
         "Gerenciamento": {"icon": "📊", "func": dashboard},
         "Ordens de Serviço": {"icon": "📦", "func": manage_moves},
+        "Calendário": {"icon": "📅", "func": calendar_view},
+        "Notificações": {"icon": "🔔", "func": notifications_center},
         "Moradores": {"icon": "🏠", "func": residents_form},
         "Agendamento": {"icon": "📅", "func": schedule_form},
         "Funcionários": {"icon": "👥", "func": staff_management},
         "Secretarias": {"icon": "🏢", "func": manage_secretaries},
         "Cargos": {"icon": "🛡️", "func": manage_roles},
-        "Relatórios": {"icon": "📈", "func": reports_page},
+        "Relatórios": {"icon": "📈", "func": reports_analytics_page},
+        "WhatsApp": {"icon": "📱", "func": whatsapp_page},
     }
     
     # Regras de Menu Dinâmico
-    options = ["Gerenciamento", "Ordens de Serviço"]
+    options = ["Gerenciamento", "Ordens de Serviço", "Calendário", "Notificações"]
     can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
     
     if can_schedule:
         options.extend(["Moradores", "Agendamento"])
         
     if user['role'] == 'ADMIN':
-        options.extend(["Funcionários", "Cargos", "Secretarias", "Relatórios"])
+        options.extend(["Funcionários", "Cargos", "Secretarias", "Relatórios", "WhatsApp"])
     elif user['role'] == 'SECRETARY':
-        options.extend(["Funcionários"])
+        options.extend(["Funcionários", "Relatórios", "WhatsApp"])
         
     # Criação da Lista de Opções para o Menu
     menu_options = [op for op in options if op in menu_map]
     
     # Sidebar com logo e usuário
     with st.sidebar:
-        # Logo pequena no topo da sidebar
+        # Logo pequena
         try:
             st.image("Telemim_logo.png", use_container_width=True)
         except:
@@ -791,6 +1071,11 @@ else:
         
         st.markdown(f"### 👤 {user['name']}")
         st.caption(f"🎯 {user.get('jobTitle', ROLES.get(user['role'], user['role']))}")
+        
+        # Badge de notificações
+        unread = notification_badge()
+        if unread > 0:
+            st.warning(f"🔔 {unread} notificação(ões) não lida(s)")
         
         st.divider()
         
