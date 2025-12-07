@@ -109,16 +109,27 @@ def execute_query(query, params=None, fetch_data=False):
             data = cur.fetchall()
             df = pd.DataFrame(data, columns=columns)
             cur.close()
+            conn.close()  # Fechar conexão após fetch
             return df
         else:
             conn.commit()
             cur.close()
+            conn.close()  # Fechar conexão após commit
             return True
             
     except Exception as e:
         st.error(f"Erro ao executar query: {e}")
-        if conn:
-            conn.rollback()
+        try:
+            if conn:
+                conn.rollback()
+        except:
+            pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except:
+                    pass
         return None if fetch_data else False
 
 def fetch_all_data():
