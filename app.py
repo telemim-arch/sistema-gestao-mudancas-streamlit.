@@ -952,80 +952,237 @@ def manage_moves():
 # --- FORMULÁRIOS ---
 
 def residents_form():
-    st.title("🏠 Cadastro de Moradores")
+    st.title("🏠 Gestão de Moradores")
     
-    # Inicializar contador de cadastros
-    if 'resident_form_key' not in st.session_state:
-        st.session_state.resident_form_key = 0
+    # Tabs: Cadastrar novo OU Ver/Editar existentes
+    tab1, tab2 = st.tabs(["➕ Cadastrar Novo", "📋 Ver e Editar"])
     
-    with st.form(f"new_resident_{st.session_state.resident_form_key}"):
-        st.subheader("📝 Dados do Cliente")
-        name = st.text_input("Nome Completo *", placeholder="Digite o nome completo...")
-        c1, c2 = st.columns(2)
-        selo = c1.text_input("Selo / ID", placeholder="Ex: A123")
-        contact = c2.text_input("Telefone / Contato", placeholder="(00) 00000-0000")
+    with tab1:
+        # CADASTRAR NOVO MORADOR
+        st.subheader("➕ Novo Morador")
         
-        st.subheader("📍 Origem")
-        c3, c4 = st.columns([3, 1])
-        orig_addr = c3.text_input("Endereço (Origem)", placeholder="Rua, Avenida...")
-        orig_num = c4.text_input("Nº (Origem)", placeholder="123")
-        orig_bairro = st.text_input("Bairro (Origem)", placeholder="Nome do bairro")
+        # Inicializar contador de cadastros
+        if 'resident_form_key' not in st.session_state:
+            st.session_state.resident_form_key = 0
         
-        st.subheader("🎯 Destino")
-        c5, c6 = st.columns([3, 1])
-        dest_addr = c5.text_input("Endereço (Destino)", placeholder="Rua, Avenida...")
-        dest_num = c6.text_input("Nº (Destino)", placeholder="456")
-        dest_bairro = st.text_input("Bairro (Destino)", placeholder="Nome do bairro")
-        
-        obs = st.text_area("Observações", placeholder="Informações adicionais...")
-        
-        st.subheader("📅 Previsão")
-        c7, c8 = st.columns(2)
-        move_date = c7.date_input("Data da Mudança")
-        move_time = c8.time_input("Hora")
-        
-        user = st.session_state.user
-        sec_id = get_current_scope_id()
-        
-        if user['role'] == 'ADMIN':
-            secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
-            sec_options = {}
-            for s in secretaries:
-                key = s.get('branchName') or s['name']
-                sec_options[key] = s['id']
-            if sec_options:
-                selected_sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
-                if selected_sec_name: 
-                    sec_id = sec_options[selected_sec_name]
+        with st.form(f"new_resident_{st.session_state.resident_form_key}"):
+            st.markdown("#### 📝 Dados do Cliente")
+            name = st.text_input("Nome Completo *", placeholder="Digite o nome completo...")
+            c1, c2 = st.columns(2)
+            selo = c1.text_input("Selo / ID", placeholder="Ex: A123")
+            contact = c2.text_input("Telefone / Contato", placeholder="(00) 00000-0000")
+            
+            st.markdown("#### 📍 Origem")
+            c3, c4 = st.columns([3, 1])
+            orig_addr = c3.text_input("Endereço (Origem)", placeholder="Rua, Avenida...")
+            orig_num = c4.text_input("Nº (Origem)", placeholder="123")
+            orig_bairro = st.text_input("Bairro (Origem)", placeholder="Nome do bairro")
+            
+            st.markdown("#### 🎯 Destino")
+            c5, c6 = st.columns([3, 1])
+            dest_addr = c5.text_input("Endereço (Destino)", placeholder="Rua, Avenida...")
+            dest_num = c6.text_input("Nº (Destino)", placeholder="456")
+            dest_bairro = st.text_input("Bairro (Destino)", placeholder="Nome do bairro")
+            
+            obs = st.text_area("Observações", placeholder="Informações adicionais...")
+            
+            st.markdown("#### 📅 Previsão")
+            c7, c8 = st.columns(2)
+            move_date = c7.date_input("Data da Mudança")
+            move_time = c8.time_input("Hora")
+            
+            user = st.session_state.user
+            sec_id = get_current_scope_id()
+            
+            if user['role'] == 'ADMIN':
+                secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
+                sec_options = {}
+                for s in secretaries:
+                    key = s.get('branchName') or s['name']
+                    sec_options[key] = s['id']
+                if sec_options:
+                    selected_sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
+                    if selected_sec_name: 
+                        sec_id = sec_options[selected_sec_name]
 
-        submit = st.form_submit_button("✅ Salvar Morador", type="primary", use_container_width=True)
-        
-        if submit:
-            if not name:
-                st.error("⚠️ Nome é obrigatório.")
-            else:
-                # Garantir secretaryId válido
-                if sec_id is None:
-                    sec_id = ensure_secretary_id()
-                
-                new_res = {
-                    'name': name, 'selo': selo, 'contact': contact,
-                    'originAddress': orig_addr, 'originNumber': orig_num, 'originNeighborhood': orig_bairro,
-                    'destAddress': dest_addr, 'destNumber': dest_num, 'destNeighborhood': dest_bairro,
-                    'observation': obs, 'moveDate': str(move_date), 'moveTime': str(move_time),
-                    'secretaryId': sec_id
-                }
-                if insert_resident(new_res):
-                    st.session_state.data = fetch_all_data()
-                    st.session_state.resident_form_key += 1
-                    
-                    st.toast("🎉 Cadastro de morador concluído!", icon="✅")
-                    st.success(f"✅ **{name}** cadastrado(a) com sucesso!\\n\\n📍 Origem: {orig_addr or 'N/A'}\\n🎯 Destino: {dest_addr or 'N/A'}")
-                    
-                    time.sleep(1)
-                    st.rerun()
+            submit = st.form_submit_button("✅ Salvar Morador", type="primary", use_container_width=True)
+            
+            if submit:
+                if not name:
+                    st.error("⚠️ Nome é obrigatório.")
                 else:
-                    st.error("❌ Erro ao cadastrar morador no banco de dados.")
+                    # Garantir secretaryId válido
+                    if sec_id is None:
+                        sec_id = ensure_secretary_id()
+                    
+                    new_res = {
+                        'name': name, 'selo': selo, 'contact': contact,
+                        'originAddress': orig_addr, 'originNumber': orig_num, 'originNeighborhood': orig_bairro,
+                        'destAddress': dest_addr, 'destNumber': dest_num, 'destNeighborhood': dest_bairro,
+                        'observation': obs, 'moveDate': str(move_date), 'moveTime': str(move_time),
+                        'secretaryId': sec_id
+                    }
+                    if insert_resident(new_res):
+                        st.session_state.data = fetch_all_data()
+                        st.session_state.resident_form_key += 1
+                        
+                        st.toast("🎉 Morador cadastrado!", icon="✅")
+                        st.success(f"✅ **{name}** cadastrado(a) com sucesso!\n\n📍 Origem: {orig_addr or 'N/A'}\n🎯 Destino: {dest_addr or 'N/A'}")
+                        
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ Erro ao cadastrar morador.")
+    
+    with tab2:
+        # VER E EDITAR MORADORES EXISTENTES
+        st.subheader("📋 Moradores Cadastrados")
+        
+        residents = filter_by_scope(st.session_state.data['residents'])
+        
+        if not residents:
+            st.info("💡 Nenhum morador cadastrado ainda.")
+            return
+        
+        # Filtro de busca
+        search_resident = st.text_input("🔍 Buscar morador", placeholder="Digite o nome...")
+        
+        # Filtrar
+        if search_resident:
+            residents = [r for r in residents if search_resident.lower() in r.get('name', '').lower()]
+        
+        st.caption(f"📊 Mostrando {len(residents)} morador(es)")
+        st.divider()
+        
+        # Listar moradores
+        for resident in residents:
+            with st.container():
+                col_header1, col_header2 = st.columns([3, 1])
+                
+                with col_header1:
+                    st.markdown(f"### 👤 {resident.get('name', 'Sem nome')}")
+                    if resident.get('contact'):
+                        st.caption(f"📞 {resident['contact']}")
+                
+                with col_header2:
+                    if resident.get('selo'):
+                        st.markdown(f"**ID:** {resident['selo']}")
+                
+                with st.expander("📋 Ver Detalhes e Editar", expanded=False):
+                    # Detalhes atuais
+                    col_det1, col_det2 = st.columns(2)
+                    
+                    with col_det1:
+                        st.markdown("**📍 Endereços**")
+                        st.write(f"**Origem:**")
+                        st.write(f"  {resident.get('originAddress', 'N/A')}, {resident.get('originNumber', '')}")
+                        st.write(f"  {resident.get('originNeighborhood', 'N/A')}")
+                        st.write(f"**Destino:**")
+                        st.write(f"  {resident.get('destAddress', 'N/A')}, {resident.get('destNumber', '')}")
+                        st.write(f"  {resident.get('destNeighborhood', 'N/A')}")
+                    
+                    with col_det2:
+                        st.markdown("**📅 Previsão de Mudança**")
+                        if resident.get('moveDate'):
+                            try:
+                                move_dt = datetime.strptime(str(resident['moveDate']), '%Y-%m-%d')
+                                st.write(f"📅 {move_dt.strftime('%d/%m/%Y')}")
+                            except:
+                                st.write(f"📅 {resident.get('moveDate', 'N/A')}")
+                        
+                        if resident.get('moveTime'):
+                            st.write(f"🕐 {resident['moveTime']}")
+                        
+                        if resident.get('observation'):
+                            st.markdown("**📝 Observações:**")
+                            st.info(resident['observation'])
+                    
+                    st.divider()
+                    
+                    # AÇÕES: Editar e Excluir
+                    st.markdown("### ⚙️ Ações")
+                    
+                    col_act1, col_act2 = st.columns([3, 1])
+                    
+                    with col_act1:
+                        # Formulário de edição rápida
+                        with st.form(f"edit_resident_{resident['id']}"):
+                            st.markdown("**✏️ Editar Informações**")
+                            
+                            col_e1, col_e2 = st.columns(2)
+                            
+                            new_name = col_e1.text_input("Nome", value=resident.get('name', ''), key=f"name_{resident['id']}")
+                            new_contact = col_e2.text_input("Telefone", value=resident.get('contact', ''), key=f"contact_{resident['id']}")
+                            
+                            new_obs = st.text_area("Observações", value=resident.get('observation', ''), key=f"obs_{resident['id']}")
+                            
+                            if st.form_submit_button("✅ Salvar Alterações", use_container_width=True):
+                                # Atualizar no banco (precisa criar função update_resident)
+                                updated_data = {
+                                    'name': new_name,
+                                    'contact': new_contact,
+                                    'observation': new_obs
+                                }
+                                
+                                # Por enquanto, usar connection para update
+                                try:
+                                    conn = get_connection()
+                                    if conn:
+                                        cur = conn.cursor()
+                                        cur.execute("""
+                                            UPDATE residents 
+                                            SET name = %s, contact = %s, observation = %s
+                                            WHERE id = %s
+                                        """, (new_name, new_contact, new_obs, resident['id']))
+                                        conn.commit()
+                                        cur.close()
+                                        conn.close()
+                                        
+                                        st.session_state.data = fetch_all_data()
+                                        st.toast(f"✅ {new_name} atualizado!")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Erro ao atualizar: {str(e)}")
+                    
+                    with col_act2:
+                        st.markdown("**🗑️ Excluir**")
+                        st.caption("⚠️ Ação irreversível!")
+                        
+                        if st.button("🗑️ Excluir Morador", key=f"delete_{resident['id']}", type="secondary", use_container_width=True):
+                            # Confirmar exclusão
+                            st.session_state[f"confirm_delete_{resident['id']}"] = True
+                        
+                        # Confirmação
+                        if st.session_state.get(f"confirm_delete_{resident['id']}", False):
+                            st.warning("⚠️ Tem certeza?")
+                            col_conf1, col_conf2 = st.columns(2)
+                            
+                            with col_conf1:
+                                if st.button("✅ Sim", key=f"yes_{resident['id']}", use_container_width=True):
+                                    try:
+                                        conn = get_connection()
+                                        if conn:
+                                            cur = conn.cursor()
+                                            # Deletar
+                                            cur.execute("DELETE FROM residents WHERE id = %s", (resident['id'],))
+                                            conn.commit()
+                                            cur.close()
+                                            conn.close()
+                                            
+                                            st.session_state.data = fetch_all_data()
+                                            st.toast(f"🗑️ {resident.get('name', 'Morador')} excluído!")
+                                            time.sleep(0.5)
+                                            st.rerun()
+                                    except Exception as e:
+                                        st.error(f"❌ Erro: {str(e)}")
+                            
+                            with col_conf2:
+                                if st.button("❌ Não", key=f"no_{resident['id']}", use_container_width=True):
+                                    st.session_state[f"confirm_delete_{resident['id']}"] = False
+                                    st.rerun()
+                
+                st.markdown("---")
 
 def schedule_form():
     st.title("🗓️ Agendamento de OS")
