@@ -614,8 +614,8 @@ def reports_analytics_page():
 def manage_moves():
     st.title("📦 Ordens de Serviço")
     
-    # Tabs: Ver OSs existentes OU Criar nova
-    tab1, tab2 = st.tabs(["📋 Ver Ordens", "➕ Nova Ordem"])
+    # Tabs: Ver OSs OU Criar nova OU Lista de Mudanças
+    tab1, tab2, tab3 = st.tabs(["📋 Ver Ordens", "➕ Nova Ordem", "📅 Mudanças Agendadas"])
     
     with tab1:
         # VISUALIZAR OSs EXISTENTES
@@ -948,6 +948,161 @@ def manage_moves():
                     st.rerun()
                 else:
                     st.error("❌ Erro ao criar OS. Tente novamente.")
+    
+    with tab3:
+        # LISTA DE MUDANÇAS AGENDADAS
+        st.subheader("📅 Mudanças Agendadas")
+        
+        moves = filter_by_scope(st.session_state.data['moves'])
+        
+        if not moves:
+            st.info("💡 Nenhuma mudança agendada.")
+            return
+        
+        # Filtros
+        col_f1, col_f2, col_f3 = st.columns(3)
+        
+        with col_f1:
+            filter_status_agenda = st.selectbox(
+                "Status",
+                ["Todos", "A realizar", "Realizando", "Concluído"],
+                key="filter_agenda_status"
+            )
+        
+        with col_f2:
+            filter_date_from = st.date_input(
+                "De (Data)",
+                value=None,
+                key="filter_date_from"
+            )
+        
+        with col_f3:
+            filter_date_to = st.date_input(
+                "Até (Data)",
+                value=None,
+                key="filter_date_to"
+            )
+        
+        # Aplicar filtros
+        filtered = moves
+        
+        if filter_status_agenda != "Todos":
+            filtered = [m for m in filtered if m.get('status') == filter_status_agenda]
+        
+        if filter_date_from:
+            filtered = [m for m in filtered if m.get('date') and str(m['date']) >= str(filter_date_from)]
+        
+        if filter_date_to:
+            filtered = [m for m in filtered if m.get('date') and str(m['date']) <= str(filter_date_to)]
+        
+        # Ordenar por data
+        filtered = sorted(filtered, key=lambda x: x.get('date', ''), reverse=False)
+        
+        st.caption(f"📊 {len(filtered)} mudança(s) agendada(s)")
+        st.divider()
+        
+        # Agrupar por data
+        moves_by_date = {}
+        for move in filtered:
+            date_str = move.get('date', 'Sem data')
+            if date_str not in moves_by_date:
+                moves_by_date[date_str] = []
+            moves_by_date[date_str].append(move)
+        
+        # Mostrar por data
+        for date_str, moves_list in moves_by_date.items():
+            # Formatar data
+            try:
+                date_obj = datetime.strptime(str(date_str), '%Y-%m-%d')
+                formatted_date = date_obj.strftime('%d/%m/%Y - %A')
+                
+                # Verificar se é hoje
+                if date_obj.date() == datetime.now().date():
+                    formatted_date += " 🔥 HOJE"
+                elif date_obj.date() < datetime.now().date():
+                    formatted_date += " ⚠️ ATRASADA"
+            except:
+                formatted_date = str(date_str)
+            
+            st.markdown(f"### 📅 {formatted_date}")
+            st.caption(f"{len(moves_list)} mudança(s) neste dia")
+            
+            # Listar mudanças deste dia
+            for move in moves_list:
+                residents = st.session_state.data['residents']
+                resident = next((r for r in residents if r.get('id') == move.get('residentId')), None)
+                
+                if not resident:
+                    continue
+                
+                # Status
+                status_emoji = {
+                    'A realizar': '🟡',
+                    'Realizando': '🔵',
+                    'Concluído': '🟢'
+                }
+                emoji = status_emoji.get(move.get('status', 'A realizar'), '⚪')
+                
+                # Card da mudança
+                with st.container():
+                    col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                    
+                    with col1:
+                        st.markdown(f"{emoji} **{resident.get('name', 'N/A')}**")
+                        if resident.get('contact'):
+                            st.caption(f"📞 {resident['contact']}")
+                    
+                    with col2:
+                        st.write(f"🕐 **{move.get('time', 'N/A')}**")
+                        st.caption(f"OS #{move.get('id', '?')}")
+                    
+                    with col3:
+                        st.write(f"📦 **{move.get('metragem', 0)} m³**")
+                        st.caption(f"{move.get('status', 'N/A')}")
+                    
+                    with col4:
+                        if st.button("👁️", key=f"view_agenda_{move['id']}", help="Ver detalhes"):
+                            st.session_state[f"show_details_{move['id']}"] = not st.session_state.get(f"show_details_{move['id']}", False)
+                            st.rerun()
+                    
+                    # Detalhes (se expandido)
+                    if st.session_state.get(f"show_details_{move['id']}", False):
+                        st.markdown("---")
+                        
+                        col_det1, col_det2 = st.columns(2)
+                        
+                        with col_det1:
+                            st.markdown("**📍 Endereços:**")
+                            st.write(f"**Origem:** {resident.get('originAddress', 'N/A')}, {resident.get('originNumber', '')}")
+                            st.write(f"Bairro: {resident.get('originNeighborhood', 'N/A')}")
+                            st.write(f"**Destino:** {resident.get('destAddress', 'N/A')}, {resident.get('destNumber', '')}")
+                            st.write(f"Bairro: {resident.get('destNeighborhood', 'N/A')}")
+                        
+                        with col_det2:
+                            st.markdown("**👥 Equipe:**")
+                            
+                            sup_id = move.get('supervisorId')
+                            if sup_id:
+                                sup_name = get_name_by_id(st.session_state.data['staff'], sup_id)
+                                st.write(f"🔧 Supervisor: {sup_name}")
+                            
+                            coord_id = move.get('coordinatorId')
+                            if coord_id:
+                                coord_name = get_name_by_id(st.session_state.data['staff'], coord_id)
+                                st.write(f"📋 Coordenador: {coord_name}")
+                            
+                            drv_id = move.get('driverId')
+                            if drv_id:
+                                drv_name = get_name_by_id(st.session_state.data['staff'], drv_id)
+                                st.write(f"🚛 Motorista: {drv_name}")
+                        
+                        if resident.get('observation'):
+                            st.markdown("**📝 Observações:**")
+                            st.info(resident['observation'])
+                    
+                    st.markdown("---")
+            
+            st.divider()
 
 # --- FORMULÁRIOS ---
 
@@ -1149,28 +1304,40 @@ def residents_form():
                         st.markdown("**🗑️ Excluir**")
                         st.caption("⚠️ Ação irreversível!")
                         
-                        if st.button("🗑️ Excluir Morador", key=f"delete_{resident['id']}", type="secondary", use_container_width=True):
-                            # Verificar se tem OSs vinculadas
-                            moves_vinculadas = [m for m in st.session_state.data['moves'] if m.get('residentId') == resident['id']]
+                        # Verificar se tem OSs vinculadas ANTES do botão
+                        moves_vinculadas = [m for m in st.session_state.data['moves'] if m.get('residentId') == resident['id']]
+                        
+                        if moves_vinculadas:
+                            # TEM OSs - mostrar bloqueio
+                            st.error(f"❌ Não pode excluir")
+                            st.caption(f"{len(moves_vinculadas)} OS(s) vinculada(s)")
                             
-                            if moves_vinculadas:
-                                st.error(f"❌ Não é possível excluir!")
-                                st.warning(f"⚠️ Este morador possui **{len(moves_vinculadas)} OS(s)** vinculada(s).")
-                                st.info("💡 **Solução:** Exclua ou altere as OSs vinculadas primeiro.")
-                                
-                                # Mostrar as OSs vinculadas
-                                with st.expander("📋 Ver OSs vinculadas"):
-                                    for move in moves_vinculadas:
-                                        try:
-                                            move_date = datetime.strptime(str(move.get('date')), '%Y-%m-%d')
-                                            date_str = move_date.strftime('%d/%m/%Y')
-                                        except:
-                                            date_str = str(move.get('date', 'N/A'))
-                                        
-                                        st.write(f"• OS #{move.get('id')} - {date_str} - Status: {move.get('status', 'N/A')}")
-                            else:
-                                # Confirmar exclusão se não tem OSs
+                            # Botão desabilitado
+                            st.button("🗑️ Excluir Morador", 
+                                     key=f"delete_{resident['id']}", 
+                                     type="secondary", 
+                                     use_container_width=True,
+                                     disabled=True,
+                                     help="Exclua as OSs vinculadas primeiro")
+                            
+                            # Mostrar as OSs vinculadas
+                            with st.expander("📋 Ver OSs vinculadas"):
+                                for move in moves_vinculadas:
+                                    try:
+                                        move_date = datetime.strptime(str(move.get('date')), '%Y-%m-%d')
+                                        date_str = move_date.strftime('%d/%m/%Y')
+                                    except:
+                                        date_str = str(move.get('date', 'N/A'))
+                                    
+                                    st.write(f"• OS #{move.get('id')} - {date_str} - Status: {move.get('status', 'N/A')}")
+                        else:
+                            # NÃO TEM OSs - pode excluir
+                            if st.button("🗑️ Excluir Morador", 
+                                        key=f"delete_{resident['id']}", 
+                                        type="secondary", 
+                                        use_container_width=True):
                                 st.session_state[f"confirm_delete_{resident['id']}"] = True
+                                st.rerun()
                         
                         # Confirmação (só aparece se não tem OSs vinculadas)
                         if st.session_state.get(f"confirm_delete_{resident['id']}", False):
@@ -1183,11 +1350,13 @@ def residents_form():
                                         conn = get_connection()
                                         if conn:
                                             cur = conn.cursor()
-                                            # Deletar
                                             cur.execute("DELETE FROM residents WHERE id = %s", (resident['id'],))
                                             conn.commit()
                                             cur.close()
                                             conn.close()
+                                            
+                                            # Limpar confirmação
+                                            del st.session_state[f"confirm_delete_{resident['id']}"]
                                             
                                             st.session_state.data = fetch_all_data()
                                             st.toast(f"🗑️ {resident.get('name', 'Morador')} excluído!")
@@ -1198,7 +1367,7 @@ def residents_form():
                             
                             with col_conf2:
                                 if st.button("❌ Não", key=f"no_{resident['id']}", use_container_width=True):
-                                    st.session_state[f"confirm_delete_{resident['id']}"] = False
+                                    del st.session_state[f"confirm_delete_{resident['id']}"]
                                     st.rerun()
                 
                 st.markdown("---")
