@@ -1460,7 +1460,7 @@ def residents_form():
                             col_conf1, col_conf2 = st.columns(2)
                             
                             with col_conf1:
-                                if st.button("✅ Sim", key=f"yes_{resident['id']}", use_container_width=True):
+                                if st.button("✅ Sim", key=f"yes_res_{resident['id']}", use_container_width=True):
                                     try:
                                         conn = get_connection()
                                         if conn:
@@ -1470,19 +1470,23 @@ def residents_form():
                                             cur.close()
                                             conn.close()
                                             
-                                            # Limpar confirmação
-                                            del st.session_state[f"confirm_delete_{resident['id']}"]
+                                            # Limpar confirmação antes de rerun
+                                            if f"confirm_delete_{resident['id']}" in st.session_state:
+                                                del st.session_state[f"confirm_delete_{resident['id']}"]
                                             
                                             st.session_state.data = fetch_all_data()
                                             st.toast(f"🗑️ {resident.get('name', 'Morador')} excluído!")
                                             time.sleep(0.5)
                                             st.rerun()
+                                        else:
+                                            st.error("❌ Erro de conexão")
                                     except Exception as e:
                                         st.error(f"❌ Erro ao excluir: {str(e)}")
                             
                             with col_conf2:
-                                if st.button("❌ Não", key=f"no_{resident['id']}", use_container_width=True):
-                                    del st.session_state[f"confirm_delete_{resident['id']}"]
+                                if st.button("❌ Não", key=f"no_res_{resident['id']}", use_container_width=True):
+                                    if f"confirm_delete_{resident['id']}" in st.session_state:
+                                        del st.session_state[f"confirm_delete_{resident['id']}"]
                                     st.rerun()
                 
                 st.markdown("---")
@@ -1755,7 +1759,7 @@ def staff_management():
                             col_yes, col_no = st.columns(2)
                             
                             with col_yes:
-                                if st.button("Sim", key=f"yes_{row['id']}", use_container_width=True):
+                                if st.button("Sim", key=f"yes_staff_{row['id']}_{idx}", use_container_width=True):
                                     if delete_staff(row['id']):
                                         st.toast(f"🗑️ {row['name']} deletado!", icon="✅")
                                         st.success(f"✅ **{row['name']}** deletado com sucesso!")
@@ -1768,7 +1772,7 @@ def staff_management():
                                         st.error("❌ Erro ao deletar")
                             
                             with col_no:
-                                if st.button("Não", key=f"no_{row['id']}", use_container_width=True):
+                                if st.button("Não", key=f"no_staff_{row['id']}_{idx}", use_container_width=True):
                                     if f'confirm_delete_{row["id"]}' in st.session_state:
                                         del st.session_state[f'confirm_delete_{row["id"]}']
                                     st.rerun()
@@ -1892,7 +1896,6 @@ else:
         "Gerenciamento": {"icon": "📊", "func": dashboard},
         "Ordens de Serviço": {"icon": "📦", "func": manage_moves},
         "Calendário": {"icon": "📅", "func": calendar_view},
-        "Notificações": {"icon": "🔔", "func": notifications_center},
         "Moradores": {"icon": "🏠", "func": residents_form},
         "Agendamento": {"icon": "📅", "func": schedule_form},
         "Funcionários": {"icon": "👥", "func": staff_management},
@@ -1902,7 +1905,7 @@ else:
     }
     
     # Regras de Menu Dinâmico
-    options = ["Gerenciamento", "Ordens de Serviço", "Calendário", "Notificações"]
+    options = ["Gerenciamento", "Ordens de Serviço", "Calendário"]
     can_schedule = user['role'] in ['ADMIN', 'SECRETARY', 'COORDINATOR', 'SUPERVISOR']
     
     if can_schedule:
@@ -1928,11 +1931,6 @@ else:
         
         st.markdown(f"### 👤 {user['name']}")
         st.caption(f"🎯 {user.get('jobTitle', ROLES.get(user['role'], user['role']))}")
-        
-        # Badge de notificações
-        unread = notification_badge()
-        if unread > 0:
-            st.warning(f"🔔 {unread} notificação(ões) não lida(s)")
         
         st.divider()
         
