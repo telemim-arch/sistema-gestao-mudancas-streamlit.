@@ -214,7 +214,7 @@ def dashboard():
     scope_id = get_current_scope_id()
     moves = filter_by_scope(st.session_state.data['moves'])
     
-    # KPIs com Cards Não Interativos
+    # KPIs com Cards INTERATIVOS
     col1, col2, col3 = st.columns(3)
     
     # Contagem de Status
@@ -226,13 +226,16 @@ def dashboard():
     if 'dashboard_filter_status' not in st.session_state:
         st.session_state.dashboard_filter_status = "Todos"
     
-    # Cards com métricas (sem botões)
+    # Cards CLICÁVEIS com botões
     with col1:
         st.metric(
             label="📋 A Realizar",
             value=todo,
             delta=None
         )
+        if st.button("🔍 Ver A Realizar", key="btn_todo", use_container_width=True):
+            st.session_state.dashboard_filter_status = "A realizar"
+            st.rerun()
     
     with col2:
         st.metric(
@@ -240,6 +243,9 @@ def dashboard():
             value=doing,
             delta=None
         )
+        if st.button("🔍 Ver Realizando", key="btn_doing", use_container_width=True):
+            st.session_state.dashboard_filter_status = "Realizando"
+            st.rerun()
     
     with col3:
         st.metric(
@@ -247,8 +253,19 @@ def dashboard():
             value=done,
             delta=None
         )
+        if st.button("🔍 Ver Concluídas", key="btn_done", use_container_width=True):
+            st.session_state.dashboard_filter_status = "Concluído"
+            st.rerun()
             
     st.divider()
+    
+    # Botão para mostrar todas
+    col_clear1, col_clear2, col_clear3 = st.columns([1, 1, 1])
+    with col_clear2:
+        if st.session_state.dashboard_filter_status != "Todos":
+            if st.button("🔄 Mostrar Todas", type="secondary", use_container_width=True):
+                st.session_state.dashboard_filter_status = "Todos"
+                st.rerun()
     
     # Filtros
     st.subheader("🔍 Buscar Mudanças")
@@ -258,7 +275,9 @@ def dashboard():
         search_query = st.text_input("Buscar por nome", "")
     
     with col_f2:
-        filter_status = st.selectbox("Filtrar por Status", ["Todos", "A realizar", "Realizando", "Concluído"])
+        filter_status = st.selectbox("Filtrar por Status", 
+                                     ["Todos", "A realizar", "Realizando", "Concluído"],
+                                     index=["Todos", "A realizar", "Realizando", "Concluído"].index(st.session_state.dashboard_filter_status))
     
     with col_f3:
         filter_date = st.date_input("Filtrar por Data", value=None)
@@ -701,20 +720,40 @@ def schedule_form():
     scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
     
     if not scoped_residents:
-        st.warning("Nenhum morador cadastrado nesta base. Cadastre um morador primeiro.")
+        st.warning("⚠️ Nenhum morador cadastrado nesta base.")
+        st.info("💡 Cadastre um morador primeiro na aba **🏠 Moradores**")
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("➕ Ir para Cadastro", type="primary", use_container_width=True):
+                st.info("👆 Clique na aba '🏠 Moradores' no menu acima")
         return
+    
+    # Inicializar contador de formulários
+    if 'schedule_form_key' not in st.session_state:
+        st.session_state.schedule_form_key = 0
 
-    with st.form("new_move"):
+    with st.form(f"new_move_{st.session_state.schedule_form_key}"):
+        st.subheader("📋 Informações da Mudança")
+        
         res_map = {r['name']: r['id'] for r in scoped_residents}
-        res_name = st.selectbox("Morador", list(res_map.keys()))
+        res_name = st.selectbox("👤 Morador *", list(res_map.keys()), 
+                                help="Selecione o morador desta mudança")
+        
+        st.divider()
         
         c1, c2 = st.columns(2)
-        m_date = c1.date_input("Data da Mudança")
-        m_time = c2.time_input("Hora")
+        m_date = c1.date_input("📅 Data da Mudança *", help="Data prevista para a mudança")
+        m_time = c2.time_input("🕐 Hora *", help="Horário previsto")
         
-        metragem = st.number_input("Volume (m³)", min_value=0.0, step=0.5)
+        metragem = st.number_input("📦 Volume (m³)", 
+                                   min_value=0.0, 
+                                   step=0.5, 
+                                   value=0.0,
+                                   help="Volume estimado da mudança")
         
-        st.subheader("Equipe")
+        st.divider()
+        st.subheader("👥 Equipe (Opcional)")
         
         supervisors = [s for s in scoped_staff if s['role'] in ['SUPERVISOR', 'ADMIN']]
         coordinators = [s for s in scoped_staff if s['role'] in ['COORDINATOR', 'ADMIN']]
@@ -725,18 +764,33 @@ def schedule_form():
         drv_id = None
         
         if supervisors:
-            sup_name = st.selectbox("Supervisor", [s['name'] for s in supervisors])
-            sup_id = next((s['id'] for s in supervisors if s['name'] == sup_name), None)
+            sup_options = ["Nenhum"] + [s['name'] for s in supervisors]
+            sup_name = st.selectbox("🔧 Supervisor", sup_options)
+            if sup_name != "Nenhum":
+                sup_id = next((s['id'] for s in supervisors if s['name'] == sup_name), None)
+        else:
+            st.info("💡 Nenhum supervisor cadastrado")
         
         if coordinators:
-            coord_name = st.selectbox("Coordenador", [s['name'] for s in coordinators])
-            coord_id = next((s['id'] for s in coordinators if s['name'] == coord_name), None)
+            coord_options = ["Nenhum"] + [s['name'] for s in coordinators]
+            coord_name = st.selectbox("📋 Coordenador", coord_options)
+            if coord_name != "Nenhum":
+                coord_id = next((s['id'] for s in coordinators if s['name'] == coord_name), None)
+        else:
+            st.info("💡 Nenhum coordenador cadastrado")
         
         if drivers:
-            drv_name = st.selectbox("Motorista", [s['name'] for s in drivers])
-            drv_id = next((s['id'] for s in drivers if s['name'] == drv_name), None)
+            drv_options = ["Nenhum"] + [s['name'] for s in drivers]
+            drv_name = st.selectbox("🚛 Motorista", drv_options)
+            if drv_name != "Nenhum":
+                drv_id = next((s['id'] for s in drivers if s['name'] == drv_name), None)
+        else:
+            st.info("💡 Nenhum motorista cadastrado")
         
-        submit = st.form_submit_button("Agendar Mudança")
+        st.divider()
+        submit = st.form_submit_button("✅ Agendar Mudança", 
+                                       type="primary", 
+                                       use_container_width=True)
         
         if submit:
             new_move = {
@@ -748,15 +802,27 @@ def schedule_form():
                 'coordinatorId': coord_id,
                 'driverId': drv_id,
                 'status': 'A realizar',
-                'secretaryId': ensure_secretary_id()  # Sempre retorna valor válido
+                'secretaryId': ensure_secretary_id()
             }
             
             if insert_move(new_move):
                 st.session_state.data = fetch_all_data()
-                st.success("Mudança agendada com sucesso!")
+                st.session_state.schedule_form_key += 1
+                
+                st.toast("🎉 OS agendada com sucesso!", icon="✅")
+                st.success(f"""
+                ✅ **Mudança agendada com sucesso!**
+                
+                👤 Cliente: {res_name}
+                📅 Data: {m_date.strftime('%d/%m/%Y')}
+                🕐 Hora: {m_time.strftime('%H:%M')}
+                📦 Volume: {metragem} m³
+                """)
+                
+                time.sleep(1.5)
                 st.rerun()
             else:
-                st.error("Erro ao agendar mudança.")
+                st.error("❌ Erro ao agendar mudança. Tente novamente.")
 
 def staff_management():
     st.title("👥 Recursos Humanos")
