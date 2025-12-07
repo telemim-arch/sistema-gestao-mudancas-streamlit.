@@ -1111,10 +1111,10 @@ def residents_form():
                             
                             col_e1, col_e2 = st.columns(2)
                             
-                            new_name = col_e1.text_input("Nome", value=resident.get('name', ''), key=f"name_{resident['id']}")
-                            new_contact = col_e2.text_input("Telefone", value=resident.get('contact', ''), key=f"contact_{resident['id']}")
+                            new_name = col_e1.text_input("Nome", value=resident.get('name', ''))
+                            new_contact = col_e2.text_input("Telefone", value=resident.get('contact', ''))
                             
-                            new_obs = st.text_area("Observações", value=resident.get('observation', ''), key=f"obs_{resident['id']}")
+                            new_obs = st.text_area("Observações", value=resident.get('observation', ''))
                             
                             if st.form_submit_button("✅ Salvar Alterações", use_container_width=True):
                                 # Atualizar no banco (precisa criar função update_resident)
@@ -1380,11 +1380,11 @@ def staff_management():
                     col1, col2 = st.columns([3, 1])
                     
                     with col1:
-                        with st.form(f"edit_staff_{row['id']}"):
+                        with st.form(f"edit_staff_{row['id']}_{idx}"):
                             st.write("**Editar Informações:**")
                             
-                            new_name = st.text_input("Nome", value=row.get('name', ''), key=f"name_{row['id']}")
-                            new_email = st.text_input("Email", value=row.get('email', ''), key=f"email_{row['id']}")
+                            new_name = st.text_input("Nome", value=row.get('name', ''))
+                            new_email = st.text_input("Email", value=row.get('email', ''))
                             
                             current_role = row.get('role', '')
                             current_role_display = ROLES.get(current_role, current_role)
@@ -1398,8 +1398,7 @@ def staff_management():
                             new_role_display = st.selectbox(
                                 "Permissão", 
                                 role_options, 
-                                index=role_index,
-                                key=f"role_{row['id']}"
+                                index=role_index
                             )
                             
                             col_btn1, col_btn2 = st.columns(2)
