@@ -1150,10 +1150,29 @@ def residents_form():
                         st.caption("⚠️ Ação irreversível!")
                         
                         if st.button("🗑️ Excluir Morador", key=f"delete_{resident['id']}", type="secondary", use_container_width=True):
-                            # Confirmar exclusão
-                            st.session_state[f"confirm_delete_{resident['id']}"] = True
+                            # Verificar se tem OSs vinculadas
+                            moves_vinculadas = [m for m in st.session_state.data['moves'] if m.get('residentId') == resident['id']]
+                            
+                            if moves_vinculadas:
+                                st.error(f"❌ Não é possível excluir!")
+                                st.warning(f"⚠️ Este morador possui **{len(moves_vinculadas)} OS(s)** vinculada(s).")
+                                st.info("💡 **Solução:** Exclua ou altere as OSs vinculadas primeiro.")
+                                
+                                # Mostrar as OSs vinculadas
+                                with st.expander("📋 Ver OSs vinculadas"):
+                                    for move in moves_vinculadas:
+                                        try:
+                                            move_date = datetime.strptime(str(move.get('date')), '%Y-%m-%d')
+                                            date_str = move_date.strftime('%d/%m/%Y')
+                                        except:
+                                            date_str = str(move.get('date', 'N/A'))
+                                        
+                                        st.write(f"• OS #{move.get('id')} - {date_str} - Status: {move.get('status', 'N/A')}")
+                            else:
+                                # Confirmar exclusão se não tem OSs
+                                st.session_state[f"confirm_delete_{resident['id']}"] = True
                         
-                        # Confirmação
+                        # Confirmação (só aparece se não tem OSs vinculadas)
                         if st.session_state.get(f"confirm_delete_{resident['id']}", False):
                             st.warning("⚠️ Tem certeza?")
                             col_conf1, col_conf2 = st.columns(2)
@@ -1175,7 +1194,7 @@ def residents_form():
                                             time.sleep(0.5)
                                             st.rerun()
                                     except Exception as e:
-                                        st.error(f"❌ Erro: {str(e)}")
+                                        st.error(f"❌ Erro ao excluir: {str(e)}")
                             
                             with col_conf2:
                                 if st.button("❌ Não", key=f"no_{resident['id']}", use_container_width=True):
@@ -1423,8 +1442,29 @@ def staff_management():
                         st.write("")
                         
                         if st.button(f"🗑️ Deletar", key=f"del_{row['id']}", type="secondary", use_container_width=True):
-                            st.session_state[f'confirm_delete_{row["id"]}'] = True
-                            st.rerun()
+                            # Verificar se tem OSs vinculadas como supervisor, coordenador ou motorista
+                            moves_supervisor = [m for m in st.session_state.data['moves'] if m.get('supervisorId') == row['id']]
+                            moves_coordinator = [m for m in st.session_state.data['moves'] if m.get('coordinatorId') == row['id']]
+                            moves_driver = [m for m in st.session_state.data['moves'] if m.get('driverId') == row['id']]
+                            
+                            total_moves = len(moves_supervisor) + len(moves_coordinator) + len(moves_driver)
+                            
+                            if total_moves > 0:
+                                st.error(f"❌ Não é possível excluir!")
+                                st.warning(f"⚠️ Este funcionário está vinculado a **{total_moves} OS(s)**.")
+                                st.info("💡 **Solução:** Altere ou exclua as OSs vinculadas primeiro.")
+                                
+                                # Mostrar detalhes
+                                with st.expander("📋 Ver OSs vinculadas"):
+                                    if moves_supervisor:
+                                        st.write(f"**Como Supervisor:** {len(moves_supervisor)} OS(s)")
+                                    if moves_coordinator:
+                                        st.write(f"**Como Coordenador:** {len(moves_coordinator)} OS(s)")
+                                    if moves_driver:
+                                        st.write(f"**Como Motorista:** {len(moves_driver)} OS(s)")
+                            else:
+                                st.session_state[f'confirm_delete_{row["id"]}'] = True
+                                st.rerun()
                         
                         if st.session_state.get(f'confirm_delete_{row["id"]}', False):
                             st.warning("⚠️ Confirmar exclusão?")
