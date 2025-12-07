@@ -6,11 +6,10 @@ from datetime import datetime
 
 # --- Configuração de Conexão Segura ---
 
-@st.cache_resource
 def get_connection():
     """
-    Cria e retorna uma conexão com o banco de dados PostgreSQL
-    usando as credenciais de st.secrets.
+    Cria e retorna uma NOVA conexão com o banco de dados PostgreSQL.
+    IMPORTANTE: Sempre fechar a conexão após usar!
     """
     try:
         conn = psycopg2.connect(
