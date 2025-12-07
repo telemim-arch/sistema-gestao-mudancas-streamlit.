@@ -653,7 +653,8 @@ def manage_moves():
         if search_client:
             residents = st.session_state.data['residents']
             filtered_moves = [m for m in filtered_moves 
-                            if search_client.lower() in get_name_by_id(residents, m['residentId']).lower()]
+                            if m.get('residentId') and 
+                            search_client.lower() in get_name_by_id(residents, m.get('residentId')).lower()]
         
         # Ordenar
         if sort_by == "Data (mais recente)":
@@ -663,7 +664,7 @@ def manage_moves():
         else:  # Cliente A-Z
             residents = st.session_state.data['residents']
             filtered_moves = sorted(filtered_moves, 
-                                  key=lambda x: get_name_by_id(residents, x['residentId']))
+                                  key=lambda x: get_name_by_id(residents, x.get('residentId')) if x.get('residentId') else 'ZZZ')
         
         st.divider()
         st.caption(f"📊 Mostrando {len(filtered_moves)} de {len(moves)} ordem(ns)")
@@ -671,7 +672,13 @@ def manage_moves():
         # Lista visual de OSs
         for move in filtered_moves:
             residents = st.session_state.data['residents']
-            resident = next((r for r in residents if r['id'] == move['residentId']), None)
+            
+            # Validar se move tem residentId
+            if not move.get('residentId'):
+                st.warning(f"⚠️ OS #{move.get('id', '?')} sem cliente vinculado")
+                continue
+            
+            resident = next((r for r in residents if r.get('id') == move.get('residentId')), None)
             
             if not resident:
                 continue
