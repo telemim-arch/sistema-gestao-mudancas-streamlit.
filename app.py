@@ -1178,13 +1178,50 @@ def residents_form():
                         'secretaryId': sec_id
                     }
                     if insert_resident(new_res):
+                        # Recarregar dados para pegar o ID do morador recém-criado
+                        st.session_state.data = fetch_all_data()
+                        
+                        # Buscar o morador recém-criado (último inserido)
+                        all_residents = st.session_state.data['residents']
+                        new_resident = max(all_residents, key=lambda x: x.get('id', 0))
+                        
+                        # CRIAR OS AUTOMATICAMENTE
+                        auto_os = {
+                            'residentId': new_resident['id'],
+                            'date': str(move_date),
+                            'time': str(move_time),
+                            'metragem': 0.0,
+                            'supervisorId': None,
+                            'coordinatorId': None,
+                            'driverId': None,
+                            'status': 'A realizar',
+                            'secretaryId': sec_id
+                        }
+                        
+                        # Inserir OS
+                        os_criada = insert_move(auto_os)
+                        
+                        # Recarregar novamente para pegar a OS
                         st.session_state.data = fetch_all_data()
                         st.session_state.resident_form_key += 1
                         
-                        st.toast("🎉 Morador cadastrado!", icon="✅")
-                        st.success(f"✅ **{name}** cadastrado(a) com sucesso!\n\n📍 Origem: {orig_addr or 'N/A'}\n🎯 Destino: {dest_addr or 'N/A'}")
+                        if os_criada:
+                            st.toast("🎉 Morador + OS criados!", icon="✅")
+                            st.success(f"""
+                            ✅ **{name}** cadastrado(a) com sucesso!
+                            
+                            📍 Origem: {orig_addr or 'N/A'}
+                            🎯 Destino: {dest_addr or 'N/A'}
+                            
+                            📦 **OS criada automaticamente!**
+                            📅 Data: {move_date.strftime('%d/%m/%Y')}
+                            🕐 Hora: {move_time.strftime('%H:%M')}
+                            """)
+                        else:
+                            st.toast("🎉 Morador cadastrado!", icon="✅")
+                            st.warning(f"✅ **{name}** cadastrado(a)!\n\n⚠️ Erro ao criar OS automaticamente.\n💡 Crie a OS manualmente em 'Agendamento'.")
                         
-                        time.sleep(1)
+                        time.sleep(1.5)
                         st.rerun()
                     else:
                         st.error("❌ Erro ao cadastrar morador.")
