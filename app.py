@@ -416,15 +416,20 @@ def render_monthly_calendar(year, month, moves):
 def render_list_view(moves):
     """Visualização em lista"""
     if not moves:
-        st.info("Nenhuma mudança agendada neste mês")
+        st.info("📭 Nenhuma mudança agendada neste mês")
         return
     
     # Ordenar por data
-    moves_sorted = sorted(moves, key=lambda x: x.get('date', ''))
+    moves_sorted = sorted(moves, key=lambda x: x.get('date', ''), reverse=False)
+    
+    # Pegar residents uma vez
+    all_residents = st.session_state.data.get('residents', [])
+    
+    st.subheader(f"📋 {len(moves_sorted)} Mudanças Agendadas")
     
     for move in moves_sorted:
-        residents = st.session_state.data['residents']
-        resident = next((r for r in residents if r['id'] == move['residentId']), None)
+        # Buscar resident
+        resident = next((r for r in all_residents if r['id'] == move.get('residentId')), None)
         
         if resident:
             status_emoji = {
@@ -432,16 +437,40 @@ def render_list_view(moves):
                 'Realizando': '🔵',
                 'Concluído': '🟢'
             }
-            emoji = status_emoji.get(move['status'], '⚪')
+            emoji = status_emoji.get(move.get('status', 'A realizar'), '⚪')
             
-            with st.expander(f"{emoji} **OS #{move['id']}** - {resident['name']} - {move['date']}", expanded=False):
+            # Data formatada
+            try:
+                move_date = datetime.strptime(str(move['date']), '%Y-%m-%d')
+                date_str = move_date.strftime('%d/%m/%Y')
+            except:
+                date_str = str(move.get('date', 'N/A'))
+            
+            with st.expander(f"{emoji} **OS #{move.get('id', '?')}** - {resident.get('name', 'N/A')} - {date_str}", expanded=False):
                 col1, col2 = st.columns(2)
+                
                 with col1:
-                    st.markdown(f"**⏰ Horário:** {move['time']}")
+                    st.markdown(f"**⏰ Horário:** {move.get('time', 'N/A')}")
                     st.markdown(f"**📍 Origem:** {resident.get('originAddress', 'N/A')}")
+                    st.markdown(f"**📦 Volume:** {move.get('metragem', 0)} m³")
+                
                 with col2:
-                    st.markdown(f"**📊 Status:** {move['status']}")
+                    st.markdown(f"**📊 Status:** {move.get('status', 'N/A')}")
                     st.markdown(f"**🎯 Destino:** {resident.get('destAddress', 'N/A')}")
+                    
+                    # Supervisor
+                    sup_id = move.get('supervisorId')
+                    if sup_id:
+                        sup_name = get_name_by_id(st.session_state.data.get('staff', []), sup_id)
+                        st.markdown(f"**🔧 Supervisor:** {sup_name}")
+                
+                # Observações se tiver
+                if resident.get('observation'):
+                    st.markdown("---")
+                    st.markdown(f"**📝 Obs:** {resident.get('observation')}")
+        else:
+            # Resident não encontrado
+            st.warning(f"⚠️ OS #{move.get('id', '?')} - Morador não encontrado (ID: {move.get('residentId', '?')})")
 
 # --- CENTRAL DE NOTIFICAÇÕES ---
 
@@ -585,55 +614,178 @@ def reports_analytics_page():
 def manage_moves():
     st.title("📦 Ordens de Serviço")
     
-    moves = filter_by_scope(st.session_state.data['moves'])
+    # Tabs: Ver OSs existentes OU Criar nova
+    tab1, tab2 = st.tabs(["📋 Ver Ordens", "➕ Nova Ordem"])
     
-    if not moves:
-        st.info("Nenhuma OS registrada.")
-        return
+    with tab1:
+        # VISUALIZAR OSs EXISTENTES
+        moves = filter_by_scope(st.session_state.data['moves'])
+        
+        if not moves:
+            st.info("💡 Nenhuma OS registrada ainda.")
+            st.markdown("Clique na aba **➕ Nova Ordem** para criar a primeira!")
+            return
 
-    df = pd.DataFrame(moves)
-    
-    if not df.empty and 'residentId' in df.columns:
-        df['Nome Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
-        df['Supervisor'] = df['supervisorId'].apply(lambda x: get_name_by_id(st.session_state.data['staff'], x))
+        df = pd.DataFrame(moves)
         
-        edited_df = st.data_editor(
-            df,
-            column_config={
-                "id": st.column_config.NumberColumn("OS #", disabled=True),
-                "Nome Cliente": st.column_config.TextColumn("Cliente", disabled=True),
-                "date": "Data",
-                "time": "Hora",
-                "status": st.column_config.SelectboxColumn(
-                    "Status",
-                    options=["A realizar", "Realizando", "Concluído"],
-                    required=True
-                ),
-                "metragem": st.column_config.NumberColumn("Volume (m³)", min_value=0, format="%.2f"),
-                "completionDate": st.column_config.DateColumn("Data Fim"),
-                "completionTime": st.column_config.TimeColumn("Hora Fim"),
-            },
-            hide_index=True,
-            disabled=["residentId", "secretaryId", "driverId", "coordinatorId", "Supervisor"],
-            use_container_width=True
-        )
-        
-        if not df.equals(edited_df):
-            success = True
-            for idx, row in edited_df.iterrows():
-                move_id = row['id']
-                original_row = df[df['id'] == move_id].iloc[0]
-                
-                if not original_row.equals(row):
-                    if not update_move_details(move_id, dict(row)):
-                        success = False
-                        break
+        if not df.empty and 'residentId' in df.columns:
+            df['Nome Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
+            df['Supervisor'] = df['supervisorId'].apply(lambda x: get_name_by_id(st.session_state.data['staff'], x))
             
-            if success:
-                st.session_state.data = fetch_all_data()
-                st.success("Alterações salvas automaticamente no banco de dados!")
-    else:
-        st.info("Nenhuma Ordem de Serviço encontrada.")
+            st.subheader("📊 Editar Ordens de Serviço")
+            st.caption("Clique nas células para editar. Alterações são salvas automaticamente.")
+            
+            edited_df = st.data_editor(
+                df,
+                column_config={
+                    "id": st.column_config.NumberColumn("OS #", disabled=True),
+                    "Nome Cliente": st.column_config.TextColumn("Cliente", disabled=True),
+                    "date": "Data",
+                    "time": "Hora",
+                    "status": st.column_config.SelectboxColumn(
+                        "Status",
+                        options=["A realizar", "Realizando", "Concluído"],
+                        required=True
+                    ),
+                    "metragem": st.column_config.NumberColumn("Volume (m³)", min_value=0, format="%.2f"),
+                    "completionDate": st.column_config.DateColumn("Data Fim"),
+                    "completionTime": st.column_config.TimeColumn("Hora Fim"),
+                },
+                hide_index=True,
+                disabled=["residentId", "secretaryId", "driverId", "coordinatorId", "Supervisor"],
+                use_container_width=True
+            )
+            
+            if not df.equals(edited_df):
+                success = True
+                for idx, row in edited_df.iterrows():
+                    move_id = row['id']
+                    original_row = df[df['id'] == move_id].iloc[0]
+                    
+                    if not original_row.equals(row):
+                        if not update_move_details(move_id, dict(row)):
+                            success = False
+                            break
+                
+                if success:
+                    st.session_state.data = fetch_all_data()
+                    st.toast("✅ Alterações salvas!", icon="✅")
+                    st.success("✅ Alterações salvas automaticamente no banco de dados!")
+        else:
+            st.info("💡 Nenhuma Ordem de Serviço encontrada.")
+    
+    with tab2:
+        # CRIAR NOVA OS
+        st.subheader("➕ Criar Nova Ordem de Serviço")
+        
+        scoped_residents = filter_by_scope(st.session_state.data['residents'])
+        scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
+        
+        if not scoped_residents:
+            st.warning("⚠️ Nenhum morador cadastrado nesta base.")
+            st.info("💡 Cadastre um morador primeiro na aba **🏠 Moradores**")
+            return
+        
+        # Inicializar contador de formulários
+        if 'manage_moves_form_key' not in st.session_state:
+            st.session_state.manage_moves_form_key = 0
+
+        with st.form(f"create_move_{st.session_state.manage_moves_form_key}"):
+            st.markdown("#### 📋 Informações da OS")
+            
+            res_map = {r['name']: r['id'] for r in scoped_residents}
+            res_name = st.selectbox("👤 Cliente *", list(res_map.keys()), 
+                                    help="Selecione o morador/cliente desta mudança")
+            
+            st.divider()
+            
+            c1, c2 = st.columns(2)
+            m_date = c1.date_input("📅 Data da Mudança *", help="Data prevista")
+            m_time = c2.time_input("🕐 Hora *", help="Horário previsto")
+            
+            metragem = st.number_input("📦 Volume (m³)", 
+                                       min_value=0.0, 
+                                       step=0.5, 
+                                       value=0.0,
+                                       help="Volume estimado em metros cúbicos")
+            
+            st.divider()
+            st.markdown("#### 👥 Equipe (Opcional)")
+            
+            supervisors = [s for s in scoped_staff if s['role'] in ['SUPERVISOR', 'ADMIN']]
+            coordinators = [s for s in scoped_staff if s['role'] in ['COORDINATOR', 'ADMIN']]
+            drivers = [s for s in scoped_staff if s['role'] in ['DRIVER']]
+            
+            sup_id = None
+            coord_id = None
+            drv_id = None
+            
+            col_sup, col_coord, col_drv = st.columns(3)
+            
+            with col_sup:
+                if supervisors:
+                    sup_options = ["Nenhum"] + [s['name'] for s in supervisors]
+                    sup_name = st.selectbox("🔧 Supervisor", sup_options)
+                    if sup_name != "Nenhum":
+                        sup_id = next((s['id'] for s in supervisors if s['name'] == sup_name), None)
+                else:
+                    st.info("💡 Sem supervisor")
+            
+            with col_coord:
+                if coordinators:
+                    coord_options = ["Nenhum"] + [s['name'] for s in coordinators]
+                    coord_name = st.selectbox("📋 Coordenador", coord_options)
+                    if coord_name != "Nenhum":
+                        coord_id = next((s['id'] for s in coordinators if s['name'] == coord_name), None)
+                else:
+                    st.info("💡 Sem coordenador")
+            
+            with col_drv:
+                if drivers:
+                    drv_options = ["Nenhum"] + [s['name'] for s in drivers]
+                    drv_name = st.selectbox("🚛 Motorista", drv_options)
+                    if drv_name != "Nenhum":
+                        drv_id = next((s['id'] for s in drivers if s['name'] == drv_name), None)
+                else:
+                    st.info("💡 Sem motorista")
+            
+            st.divider()
+            submit = st.form_submit_button("✅ Criar Ordem de Serviço", 
+                                           type="primary", 
+                                           use_container_width=True)
+            
+            if submit:
+                new_move = {
+                    'residentId': res_map[res_name],
+                    'date': str(m_date),
+                    'time': str(m_time),
+                    'metragem': metragem,
+                    'supervisorId': sup_id,
+                    'coordinatorId': coord_id,
+                    'driverId': drv_id,
+                    'status': 'A realizar',
+                    'secretaryId': ensure_secretary_id()
+                }
+                
+                if insert_move(new_move):
+                    st.session_state.data = fetch_all_data()
+                    st.session_state.manage_moves_form_key += 1
+                    
+                    st.toast("🎉 OS criada com sucesso!", icon="✅")
+                    st.success(f"""
+                    ✅ **Ordem de Serviço criada com sucesso!**
+                    
+                    👤 Cliente: {res_name}
+                    📅 Data: {m_date.strftime('%d/%m/%Y')}
+                    🕐 Hora: {m_time.strftime('%H:%M')}
+                    📦 Volume: {metragem} m³
+                    📊 Status: A realizar
+                    """)
+                    
+                    time.sleep(1.5)
+                    st.rerun()
+                else:
+                    st.error("❌ Erro ao criar OS. Tente novamente.")
 
 # --- FORMULÁRIOS ---
 
