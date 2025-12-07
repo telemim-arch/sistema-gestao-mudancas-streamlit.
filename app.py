@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
@@ -119,7 +118,7 @@ def get_current_scope_id():
     if not user: return None
     if user['role'] == 'ADMIN': return None
     if user['role'] == 'SECRETARY': return user['id']
-    return user['secretaryId']
+    return user.get('secretaryId')  # Usar .get() para evitar KeyError
 
 def filter_by_scope(data_list, key='secretaryId'):
     scope = get_current_scope_id()
@@ -151,6 +150,28 @@ def get_time_ago(dt):
         return f"há {days} dia{'s' if days > 1 else ''}"
     else:
         return dt.strftime("%d/%m/%Y")
+
+def ensure_secretary_id():
+    """
+    Garante que sempre retorne um secretaryId válido
+    NUNCA retorna None!
+    """
+    user = st.session_state.user
+    data = st.session_state.data
+    
+    if user['role'] == 'ADMIN':
+        # Para ADMIN, tenta pegar primeira secretária
+        secretaries = [s for s in data['staff'] if s['role'] == 'SECRETARY']
+        if secretaries:
+            return secretaries[0]['id']
+        else:
+            # Se não houver secretária, usa ID do próprio admin
+            return user['id']
+    elif user['role'] == 'SECRETARY':
+        return user['id']
+    else:
+        # Para outros perfis, retorna secretaryId ou ID próprio
+        return user.get('secretaryId') or user['id']
 
 # --- TELA DE LOGIN ---
 
@@ -650,6 +671,10 @@ def residents_form():
             if not name:
                 st.error("⚠️ Nome é obrigatório.")
             else:
+                # Garantir secretaryId válido
+                if sec_id is None:
+                    sec_id = ensure_secretary_id()
+                
                 new_res = {
                     'name': name, 'selo': selo, 'contact': contact,
                     'originAddress': orig_addr, 'originNumber': orig_num, 'originNeighborhood': orig_bairro,
@@ -723,7 +748,7 @@ def schedule_form():
                 'coordinatorId': coord_id,
                 'driverId': drv_id,
                 'status': 'A realizar',
-                'secretaryId': get_current_scope_id()
+                'secretaryId': ensure_secretary_id()  # Sempre retorna valor válido
             }
             
             if insert_move(new_move):
@@ -993,34 +1018,7 @@ def manage_roles():
 def reports_page():
     """Página de relatórios simples (legacy)"""
     st.title("📈 Relatórios")
-    st.info("Use o novo menu 'Relatórios' para acessar analytics avançados")
-
-def whatsapp_page():
-    """Página WhatsApp simplificada"""
-    st.title("📱 Notificações WhatsApp")
-    
-    st.info("""
-    💡 **Sistema de notificações para funcionários**
-    
-    Status: Simulação ativa
-    Para produção, configure API (Twilio/Evolution)
-    """)
-    
-    staff = [s for s in st.session_state.data['staff'] if s.get('email')]
-    
-    if not staff:
-        st.warning("Nenhum funcionário cadastrado")
-        return
-    
-    recipient = st.selectbox("Destinatário", [s['name'] for s in staff])
-    message = st.text_area("Mensagem", placeholder="Digite a mensagem...")
-    
-    if st.button("📤 Enviar WhatsApp (Simulação)", type="primary"):
-        if message:
-            st.success(f"✅ Mensagem simulada para {recipient}!")
-            st.code(f"🚛 TELEMIM\\n\\n{message}")
-        else:
-            st.error("Digite uma mensagem")
+    st.info("Use o menu 'Relatórios' para acessar analytics avançados")
 
 # --- NAVEGAÇÃO PRINCIPAL ---
 
@@ -1041,7 +1039,6 @@ else:
         "Secretarias": {"icon": "🏢", "func": manage_secretaries},
         "Cargos": {"icon": "🛡️", "func": manage_roles},
         "Relatórios": {"icon": "📈", "func": reports_analytics_page},
-        "WhatsApp": {"icon": "📱", "func": whatsapp_page},
     }
     
     # Regras de Menu Dinâmico
@@ -1052,9 +1049,9 @@ else:
         options.extend(["Moradores", "Agendamento"])
         
     if user['role'] == 'ADMIN':
-        options.extend(["Funcionários", "Cargos", "Secretarias", "Relatórios", "WhatsApp"])
+        options.extend(["Funcionários", "Cargos", "Secretarias", "Relatórios"])
     elif user['role'] == 'SECRETARY':
-        options.extend(["Funcionários", "Relatórios", "WhatsApp"])
+        options.extend(["Funcionários", "Relatórios"])
         
     # Criação da Lista de Opções para o Menu
     menu_options = [op for op in options if op in menu_map]
