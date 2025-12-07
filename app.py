@@ -626,53 +626,208 @@ def manage_moves():
             st.markdown("Clique na aba **➕ Nova Ordem** para criar a primeira!")
             return
 
-        df = pd.DataFrame(moves)
+        st.subheader("📋 Todas as Ordens de Serviço")
         
-        if not df.empty and 'residentId' in df.columns:
-            df['Nome Cliente'] = df['residentId'].apply(lambda x: get_name_by_id(st.session_state.data['residents'], x))
-            df['Supervisor'] = df['supervisorId'].apply(lambda x: get_name_by_id(st.session_state.data['staff'], x))
-            
-            st.subheader("📊 Editar Ordens de Serviço")
-            st.caption("Clique nas células para editar. Alterações são salvas automaticamente.")
-            
-            edited_df = st.data_editor(
-                df,
-                column_config={
-                    "id": st.column_config.NumberColumn("OS #", disabled=True),
-                    "Nome Cliente": st.column_config.TextColumn("Cliente", disabled=True),
-                    "date": "Data",
-                    "time": "Hora",
-                    "status": st.column_config.SelectboxColumn(
-                        "Status",
-                        options=["A realizar", "Realizando", "Concluído"],
-                        required=True
-                    ),
-                    "metragem": st.column_config.NumberColumn("Volume (m³)", min_value=0, format="%.2f"),
-                    "completionDate": st.column_config.DateColumn("Data Fim"),
-                    "completionTime": st.column_config.TimeColumn("Hora Fim"),
-                },
-                hide_index=True,
-                disabled=["residentId", "secretaryId", "driverId", "coordinatorId", "Supervisor"],
-                use_container_width=True
+        # Filtros rápidos
+        col_f1, col_f2, col_f3 = st.columns(3)
+        
+        with col_f1:
+            filter_status_view = st.selectbox(
+                "Filtrar por Status",
+                ["Todos", "A realizar", "Realizando", "Concluído"],
+                key="filter_status_moves"
             )
+        
+        with col_f2:
+            search_client = st.text_input("🔍 Buscar cliente", placeholder="Digite o nome...")
+        
+        with col_f3:
+            sort_by = st.selectbox("Ordenar por", ["Data (mais recente)", "Data (mais antiga)", "Cliente (A-Z)"])
+        
+        # Aplicar filtros
+        filtered_moves = moves
+        
+        if filter_status_view != "Todos":
+            filtered_moves = [m for m in filtered_moves if m.get('status') == filter_status_view]
+        
+        if search_client:
+            residents = st.session_state.data['residents']
+            filtered_moves = [m for m in filtered_moves 
+                            if search_client.lower() in get_name_by_id(residents, m['residentId']).lower()]
+        
+        # Ordenar
+        if sort_by == "Data (mais recente)":
+            filtered_moves = sorted(filtered_moves, key=lambda x: x.get('date', ''), reverse=True)
+        elif sort_by == "Data (mais antiga)":
+            filtered_moves = sorted(filtered_moves, key=lambda x: x.get('date', ''))
+        else:  # Cliente A-Z
+            residents = st.session_state.data['residents']
+            filtered_moves = sorted(filtered_moves, 
+                                  key=lambda x: get_name_by_id(residents, x['residentId']))
+        
+        st.divider()
+        st.caption(f"📊 Mostrando {len(filtered_moves)} de {len(moves)} ordem(ns)")
+        
+        # Lista visual de OSs
+        for move in filtered_moves:
+            residents = st.session_state.data['residents']
+            resident = next((r for r in residents if r['id'] == move['residentId']), None)
             
-            if not df.equals(edited_df):
-                success = True
-                for idx, row in edited_df.iterrows():
-                    move_id = row['id']
-                    original_row = df[df['id'] == move_id].iloc[0]
-                    
-                    if not original_row.equals(row):
-                        if not update_move_details(move_id, dict(row)):
-                            success = False
-                            break
+            if not resident:
+                continue
+            
+            # Emoji do status
+            status_config = {
+                'A realizar': {'emoji': '🟡', 'color': '#FFA726'},
+                'Realizando': {'emoji': '🔵', 'color': '#42A5F5'},
+                'Concluído': {'emoji': '🟢', 'color': '#66BB6A'}
+            }
+            
+            status = move.get('status', 'A realizar')
+            config = status_config.get(status, {'emoji': '⚪', 'color': '#999'})
+            
+            # Container da OS
+            with st.container():
+                # Cabeçalho da OS
+                col_header1, col_header2, col_header3 = st.columns([3, 2, 1])
                 
-                if success:
-                    st.session_state.data = fetch_all_data()
-                    st.toast("✅ Alterações salvas!", icon="✅")
-                    st.success("✅ Alterações salvas automaticamente no banco de dados!")
-        else:
-            st.info("💡 Nenhuma Ordem de Serviço encontrada.")
+                with col_header1:
+                    st.markdown(f"### {config['emoji']} OS #{move['id']} - {resident['name']}")
+                
+                with col_header2:
+                    try:
+                        move_date = datetime.strptime(str(move['date']), '%Y-%m-%d')
+                        st.markdown(f"**📅 {move_date.strftime('%d/%m/%Y')}** às **🕐 {move.get('time', 'N/A')}**")
+                    except:
+                        st.markdown(f"**📅 {move.get('date', 'N/A')}** às **🕐 {move.get('time', 'N/A')}**")
+                
+                with col_header3:
+                    st.markdown(f"**{status}**", help=f"Status atual da OS")
+                
+                # Detalhes e ações
+                with st.expander("📋 Ver Detalhes e Editar", expanded=False):
+                    col_det1, col_det2 = st.columns(2)
+                    
+                    with col_det1:
+                        st.markdown("**📍 Endereços**")
+                        st.write(f"**Origem:** {resident.get('originAddress', 'N/A')}, {resident.get('originNumber', '')}")
+                        st.write(f"**Bairro:** {resident.get('originNeighborhood', 'N/A')}")
+                        st.write(f"**Destino:** {resident.get('destAddress', 'N/A')}, {resident.get('destNumber', '')}")
+                        st.write(f"**Bairro:** {resident.get('destNeighborhood', 'N/A')}")
+                        
+                        if resident.get('observation'):
+                            st.markdown("**📝 Observações:**")
+                            st.info(resident['observation'])
+                    
+                    with col_det2:
+                        st.markdown("**👥 Equipe**")
+                        
+                        # Supervisor
+                        sup_id = move.get('supervisorId')
+                        if sup_id:
+                            sup_name = get_name_by_id(st.session_state.data['staff'], sup_id)
+                            st.write(f"🔧 **Supervisor:** {sup_name}")
+                        
+                        # Coordenador
+                        coord_id = move.get('coordinatorId')
+                        if coord_id:
+                            coord_name = get_name_by_id(st.session_state.data['staff'], coord_id)
+                            st.write(f"📋 **Coordenador:** {coord_name}")
+                        
+                        # Motorista
+                        drv_id = move.get('driverId')
+                        if drv_id:
+                            drv_name = get_name_by_id(st.session_state.data['staff'], drv_id)
+                            st.write(f"🚛 **Motorista:** {drv_name}")
+                        
+                        # Contato
+                        if resident.get('contact'):
+                            st.write(f"📞 **Contato:** {resident['contact']}")
+                    
+                    st.divider()
+                    
+                    # AÇÕES: Alterar Status e Volume
+                    st.markdown("### ⚙️ Ações Rápidas")
+                    
+                    col_act1, col_act2, col_act3 = st.columns(3)
+                    
+                    with col_act1:
+                        st.markdown("**📊 Alterar Status**")
+                        new_status = st.selectbox(
+                            "Novo status",
+                            ["A realizar", "Realizando", "Concluído"],
+                            index=["A realizar", "Realizando", "Concluído"].index(status),
+                            key=f"status_{move['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if st.button("✅ Atualizar Status", key=f"btn_status_{move['id']}", use_container_width=True):
+                            if new_status != status:
+                                updated_data = {
+                                    'status': new_status
+                                }
+                                
+                                # Se concluído, adicionar data/hora de conclusão
+                                if new_status == "Concluído":
+                                    updated_data['completionDate'] = str(datetime.now().date())
+                                    updated_data['completionTime'] = str(datetime.now().time().strftime('%H:%M'))
+                                
+                                if update_move_details(move['id'], updated_data):
+                                    st.session_state.data = fetch_all_data()
+                                    st.toast(f"✅ Status alterado para: {new_status}")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao atualizar")
+                            else:
+                                st.info("Status não foi alterado")
+                    
+                    with col_act2:
+                        st.markdown("**📦 Volume (m³)**")
+                        current_volume = move.get('metragem', 0.0)
+                        new_volume = st.number_input(
+                            "Volume",
+                            min_value=0.0,
+                            step=0.5,
+                            value=float(current_volume) if current_volume else 0.0,
+                            key=f"volume_{move['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if st.button("✅ Atualizar Volume", key=f"btn_volume_{move['id']}", use_container_width=True):
+                            if new_volume != current_volume:
+                                if update_move_details(move['id'], {'metragem': new_volume}):
+                                    st.session_state.data = fetch_all_data()
+                                    st.toast(f"✅ Volume atualizado: {new_volume} m³")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao atualizar")
+                            else:
+                                st.info("Volume não foi alterado")
+                    
+                    with col_act3:
+                        st.markdown("**📅 Reagendar**")
+                        new_date = st.date_input(
+                            "Nova data",
+                            value=datetime.strptime(str(move['date']), '%Y-%m-%d').date() if move.get('date') else datetime.now().date(),
+                            key=f"date_{move['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if st.button("✅ Reagendar", key=f"btn_date_{move['id']}", use_container_width=True):
+                            if str(new_date) != str(move.get('date')):
+                                if update_move_details(move['id'], {'date': str(new_date)}):
+                                    st.session_state.data = fetch_all_data()
+                                    st.toast(f"✅ Reagendado para: {new_date.strftime('%d/%m/%Y')}")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao atualizar")
+                            else:
+                                st.info("Data não foi alterada")
+                
+                st.markdown("---")
     
     with tab2:
         # CRIAR NOVA OS
