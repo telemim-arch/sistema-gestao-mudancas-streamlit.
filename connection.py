@@ -1,484 +1,539 @@
 import streamlit as st
 import psycopg2
-from psycopg2 import sql
+from psycopg2 import pool, sql
 import pandas as pd
 from datetime import datetime
+from contextlib import contextmanager
+import time
 
-# --- Configuração de Conexão Segura ---
+# --- POOL DE CONEXÕES EFICIENTE ---
 
-def get_connection():
+@st.cache_resource
+def init_connection_pool():
     """
-    Cria e retorna uma NOVA conexão com o banco de dados PostgreSQL.
-    IMPORTANTE: Sempre fechar a conexão após usar!
+    Inicializa um pool de conexões reutilizáveis.
+    Melhor performance e gerenciamento de recursos.
     """
     try:
-        conn = psycopg2.connect(
+        connection_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
             host="aws-1-us-east-2.pooler.supabase.com",
             database=st.secrets["postgres"]["database"],
             user=st.secrets["postgres"]["user"],
             password=st.secrets["postgres"]["password"],
-            port=st.secrets["postgres"]["port"]
+            port=st.secrets["postgres"]["port"],
+            connect_timeout=10,
+            options='-c statement_timeout=30000'  # 30 segundos timeout
         )
-        return conn
+        return connection_pool
     except Exception as e:
-        st.error(f"Erro ao conectar ao banco de dados: {e}")
+        st.error(f"❌ Erro ao criar pool de conexões: {e}")
         return None
 
-# --- Funções de Inicialização e Consulta ---
-
-def init_db_structure(conn):
+@contextmanager
+def get_db_connection():
     """
-    Cria as tabelas necessárias no banco de dados.
-    Deve ser executado apenas uma vez.
+    Context manager para conexões do pool.
+    Garante que conexões sempre retornam ao pool.
+    
+    Uso:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT ...")
+            # conexão retorna ao pool automaticamente
     """
-    if conn is None:
+    pool = init_connection_pool()
+    if pool is None:
+        yield None
         return
-
-    cur = conn.cursor()
     
-    # Tabela staff (Funcionários)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS staff (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            role TEXT NOT NULL,
-            jobTitle TEXT,
-            secretaryId INTEGER REFERENCES staff(id),
-            branchName TEXT
-        );
-    """)
-
-    # Tabela residents (Moradores/Clientes)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS residents (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            selo TEXT,
-            contact TEXT,
-            originAddress TEXT,
-            originNumber TEXT,
-            originNeighborhood TEXT,
-            destAddress TEXT,
-            destNumber TEXT,
-            destNeighborhood TEXT,
-            observation TEXT,
-            moveDate DATE,
-            moveTime TIME,
-            secretaryId INTEGER REFERENCES staff(id)
-        );
-    """)
-
-    # Tabela moves (Ordens de Serviço/Mudanças)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS moves (
-            id SERIAL PRIMARY KEY,
-            residentId INTEGER REFERENCES residents(id) NOT NULL,
-            date DATE NOT NULL,
-            time TIME NOT NULL,
-            metragem NUMERIC,
-            supervisorId INTEGER REFERENCES staff(id),
-            coordinatorId INTEGER REFERENCES staff(id),
-            driverId INTEGER REFERENCES staff(id),
-            status TEXT NOT NULL,
-            secretaryId INTEGER REFERENCES staff(id) NOT NULL,
-            completionDate DATE,
-            completionTime TIME
-        );
-    """)
-    
-    conn.commit()
-    cur.close()
-
-def execute_query(query, params=None, fetch_data=False):
-    """
-    Executa uma query SQL (INSERT, UPDATE, DELETE) ou retorna dados (SELECT).
-    """
-    conn = get_connection()
-    if conn is None:
-        return None if fetch_data else False
-
+    conn = None
     try:
-        cur = conn.cursor()
-        cur.execute(query, params)
-        
-        if fetch_data:
-            columns = [desc[0] for desc in cur.description]
-            data = cur.fetchall()
-            df = pd.DataFrame(data, columns=columns)
-            cur.close()
-            conn.close()  # Fechar conexão após fetch
-            return df
-        else:
-            conn.commit()
-            cur.close()
-            conn.close()  # Fechar conexão após commit
-            return True
-            
+        conn = pool.getconn()
+        yield conn
     except Exception as e:
-        st.error(f"Erro ao executar query: {e}")
+        if conn:
+            conn.rollback()
+        st.error(f"❌ Erro na conexão: {e}")
+        yield None
+    finally:
+        if conn:
+            try:
+                pool.putconn(conn)
+            except:
+                pass
+
+# --- FUNÇÕES HELPER OTIMIZADAS ---
+
+def execute_query(query, params=None, fetch_data=False, retry=3):
+    """
+    Executa query com retry automático e tratamento robusto.
+    
+    Args:
+        query: SQL query
+        params: Parâmetros da query
+        fetch_data: Se True, retorna DataFrame
+        retry: Número de tentativas em caso de erro
+    """
+    for attempt in range(retry):
         try:
-            if conn:
-                conn.rollback()
-        except:
-            pass
-        finally:
-            if conn:
-                try:
-                    conn.close()
-                except:
-                    pass
-        return None if fetch_data else False
+            with get_db_connection() as conn:
+                if conn is None:
+                    continue
+                
+                cur = conn.cursor()
+                cur.execute(query, params or ())
+                
+                if fetch_data:
+                    columns = [desc[0] for desc in cur.description]
+                    data = cur.fetchall()
+                    df = pd.DataFrame(data, columns=columns)
+                    cur.close()
+                    return df
+                else:
+                    conn.commit()
+                    cur.close()
+                    return True
+                    
+        except psycopg2.OperationalError as e:
+            if attempt < retry - 1:
+                time.sleep(0.5 * (attempt + 1))  # Backoff exponencial
+                continue
+            else:
+                st.error(f"❌ Erro após {retry} tentativas: {e}")
+                return None if fetch_data else False
+        except Exception as e:
+            st.error(f"❌ Erro ao executar query: {e}")
+            return None if fetch_data else False
+    
+    return None if fetch_data else False
+
+def execute_batch(queries_with_params, retry=3):
+    """
+    Executa múltiplas queries em uma única transação.
+    Mais eficiente para operações em lote.
+    
+    Args:
+        queries_with_params: Lista de tuplas (query, params)
+    """
+    for attempt in range(retry):
+        try:
+            with get_db_connection() as conn:
+                if conn is None:
+                    continue
+                
+                cur = conn.cursor()
+                for query, params in queries_with_params:
+                    cur.execute(query, params or ())
+                
+                conn.commit()
+                cur.close()
+                return True
+                
+        except Exception as e:
+            if attempt < retry - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            else:
+                st.error(f"❌ Erro em batch após {retry} tentativas: {e}")
+                return False
+    
+    return False
+
+# --- FETCH ALL DATA OTIMIZADO ---
 
 def fetch_all_data():
     """
-    Busca todos os dados necessários para o estado inicial do aplicativo.
+    Busca todos os dados em UMA ÚNICA conexão.
+    Muito mais eficiente que múltiplas conexões.
     """
     data = {}
     
-    # 1. Staff
-    df_staff = execute_query("SELECT * FROM staff", fetch_data=True)
-    if df_staff is not None:
-        # Substituir NaN por None
-        df_staff = df_staff.where(pd.notnull(df_staff), None)
-        data['staff'] = df_staff.to_dict('records')
-    else:
-        data['staff'] = []
-    
-    # 2. Residents
-    df_residents = execute_query("SELECT * FROM residents", fetch_data=True)
-    if df_residents is not None:
-        df_residents = df_residents.where(pd.notnull(df_residents), None)
-        data['residents'] = df_residents.to_dict('records')
-    else:
-        data['residents'] = []
-    
-    # 3. Moves
-    df_moves = execute_query("SELECT * FROM moves", fetch_data=True)
-    if df_moves is not None:
-        df_moves = df_moves.where(pd.notnull(df_moves), None)
-        data['moves'] = df_moves.to_dict('records')
-    else:
-        data['moves'] = []
-    
-    # 4. Roles (Hardcoded, pois é estático)
-    data['roles'] = [
-        {'id': 1, 'name': 'Administrador', 'permission': 'ADMIN'},
-        {'id': 2, 'name': 'Secretária', 'permission': 'SECRETARY'},
-        {'id': 3, 'name': 'Supervisor', 'permission': 'SUPERVISOR'},
-        {'id': 4, 'name': 'Coordenador', 'permission': 'COORDINATOR'},
-        {'id': 5, 'name': 'Motorista', 'permission': 'DRIVER'}
-    ]
-    
-    return data
+    try:
+        with get_db_connection() as conn:
+            if conn is None:
+                return _get_empty_data()
+            
+            cur = conn.cursor()
+            
+            # 1. Staff
+            cur.execute("SELECT * FROM staff")
+            columns = [desc[0] for desc in cur.description]
+            staff_data = cur.fetchall()
+            df_staff = pd.DataFrame(staff_data, columns=columns)
+            df_staff = df_staff.where(pd.notnull(df_staff), None)
+            data['staff'] = df_staff.to_dict('records')
+            
+            # 2. Residents
+            cur.execute("SELECT * FROM residents")
+            columns = [desc[0] for desc in cur.description]
+            res_data = cur.fetchall()
+            df_res = pd.DataFrame(res_data, columns=columns)
+            df_res = df_res.where(pd.notnull(df_res), None)
+            data['residents'] = df_res.to_dict('records')
+            
+            # 3. Moves
+            cur.execute("SELECT * FROM moves")
+            columns = [desc[0] for desc in cur.description]
+            moves_data = cur.fetchall()
+            df_moves = pd.DataFrame(moves_data, columns=columns)
+            df_moves = df_moves.where(pd.notnull(df_moves), None)
+            data['moves'] = df_moves.to_dict('records')
+            
+            # 4. Secretaries
+            cur.execute("SELECT * FROM secretaries")
+            columns = [desc[0] for desc in cur.description]
+            sec_data = cur.fetchall()
+            df_sec = pd.DataFrame(sec_data, columns=columns)
+            df_sec = df_sec.where(pd.notnull(df_sec), None)
+            data['secretaries'] = df_sec.to_dict('records')
+            
+            # 5. Roles
+            cur.execute("SELECT * FROM roles")
+            columns = [desc[0] for desc in cur.description]
+            roles_data = cur.fetchall()
+            df_roles = pd.DataFrame(roles_data, columns=columns)
+            data['roles'] = df_roles.to_dict('records')
+            
+            # 6. Notifications
+            cur.execute("SELECT * FROM notifications ORDER BY \"createdAt\" DESC LIMIT 100")
+            columns = [desc[0] for desc in cur.description]
+            notif_data = cur.fetchall()
+            df_notif = pd.DataFrame(notif_data, columns=columns)
+            data['notifications'] = df_notif.to_dict('records')
+            
+            # 7. Attachments
+            cur.execute("SELECT * FROM attachments")
+            columns = [desc[0] for desc in cur.description]
+            att_data = cur.fetchall()
+            df_att = pd.DataFrame(att_data, columns=columns)
+            data['attachments'] = df_att.to_dict('records')
+            
+            cur.close()
+            return data
+            
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar dados: {e}")
+        return _get_empty_data()
 
-# --- Funções CRUD Específicas ---
+def _get_empty_data():
+    """Retorna estrutura vazia de dados"""
+    return {
+        'staff': [],
+        'residents': [],
+        'moves': [],
+        'secretaries': [],
+        'roles': [],
+        'notifications': [],
+        'attachments': []
+    }
 
-def insert_staff(name, email, password, role, jobTitle, secretaryId=None, branchName=None):
-    """Insere um novo funcionário."""
+# --- FUNÇÕES DE AUTENTICAÇÃO ---
+
+def authenticate_user(email, password):
+    """Autentica usuário"""
+    query = "SELECT * FROM staff WHERE email = %s AND password = %s"
+    df = execute_query(query, (email, password), fetch_data=True)
+    
+    if df is not None and not df.empty:
+        user = df.iloc[0].to_dict()
+        # Converter NaN para None
+        for key, value in user.items():
+            if pd.isna(value):
+                user[key] = None
+        return user
+    return None
+
+# --- FUNÇÕES DE STAFF ---
+
+def insert_staff(staff_data):
+    """Insere novo funcionário"""
     query = """
         INSERT INTO staff (name, email, password, role, jobTitle, secretaryId, branchName)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """
-    params = (name, email, password, role, jobTitle, secretaryId, branchName)
-    return execute_query(query, params)
-
-def insert_resident(data):
-    """Insere um novo morador."""
-    query = """
-        INSERT INTO residents (name, selo, contact, originAddress, originNumber, originNeighborhood,
-                               destAddress, destNumber, destNeighborhood, observation, moveDate, moveTime, secretaryId)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
     """
     params = (
-        data['name'], data['selo'], data['contact'], data['originAddress'], data['originNumber'], data['originNeighborhood'],
-        data['destAddress'], data['destNumber'], data['destNeighborhood'], data['observation'], data['moveDate'], data['moveTime'], data['secretaryId']
+        staff_data['name'],
+        staff_data['email'],
+        staff_data['password'],
+        staff_data['role'],
+        staff_data.get('jobTitle'),
+        staff_data.get('secretaryId'),
+        staff_data.get('branchName')
     )
-    return execute_query(query, params)
-
-def insert_move(data):
-    """Insere uma nova ordem de serviço."""
-    # Garantir que secretaryId nunca seja None
-    secretary_id = data.get('secretaryId')
-    if secretary_id is None:
-        # Tentar pegar do residentId
-        conn = get_connection()
-        if conn:
-            cur = conn.cursor()
-            cur.execute("SELECT \"secretaryId\" FROM residents WHERE id = %s", (data['residentId'],))
-            result = cur.fetchone()
-            cur.close()
-            if result and result[0]:
-                secretary_id = result[0]
-            else:
-                # Se ainda for None, usar ID 1 (admin padrão)
-                secretary_id = 1
-    
-    query = """
-        INSERT INTO moves (residentId, date, time, metragem, supervisorId, coordinatorId, driverId, status, secretaryId)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """
-    params = (
-        data['residentId'], data['date'], data['time'], data['metragem'], data['supervisorId'], 
-        data['coordinatorId'], data['driverId'], data['status'], secretary_id
-    )
-    return execute_query(query, params)
-
-def update_move_status(move_id, status, completionDate=None, completionTime=None):
-    """Atualiza o status de uma ordem de serviço."""
-    query = """
-        UPDATE moves
-        SET status = %s, completionDate = %s, completionTime = %s
-        WHERE id = %s
-    """
-    params = (status, completionDate, completionTime, move_id)
-    return execute_query(query, params)
-
-def update_move_details(move_id, metragem, status, completionDate=None, completionTime=None):
-    """Atualiza detalhes editáveis de uma ordem de serviço."""
-    query = """
-        UPDATE moves
-        SET metragem = %s, status = %s, completionDate = %s, completionTime = %s
-        WHERE id = %s
-    """
-    params = (metragem, status, completionDate, completionTime, move_id)
     return execute_query(query, params)
 
 def update_staff_details(staff_id, name, jobTitle, email, role):
-    """Atualiza detalhes editáveis de um funcionário."""
+    """Atualiza funcionário"""
     query = """
-        UPDATE staff
-        SET name = %s, jobTitle = %s, email = %s, role = %s
+        UPDATE staff 
+        SET name = %s, "jobTitle" = %s, email = %s, role = %s
         WHERE id = %s
     """
-    params = (name, jobTitle, email, role, staff_id)
-    return execute_query(query, params)
-
-# --- Funções de DELETE ---
-
-# SUBSTITUA AS FUNÇÕES DE DELETE NO connection.py
+    return execute_query(query, (name, jobTitle, email, role, staff_id))
 
 def delete_staff(staff_id):
-    """
-    Deleta um funcionário.
-    Antes de deletar, atualiza os registros que referenciam este funcionário.
-    """
-    conn = get_connection()
-    if conn is None:
-        return False
-    
-    try:
-        cur = conn.cursor()
-        
-        # 1. Atualizar staff que tem este funcionário como secretária (setar NULL)
-        cur.execute("UPDATE staff SET secretaryId = NULL WHERE secretaryId = %s", (staff_id,))
-        
-        # 2. Atualizar residents que tem este funcionário como secretária (setar NULL)
-        cur.execute("UPDATE residents SET secretaryId = NULL WHERE secretaryId = %s", (staff_id,))
-        
-        # 3. Atualizar moves que tem este funcionário em qualquer função
-        cur.execute("UPDATE moves SET supervisorId = NULL WHERE supervisorId = %s", (staff_id,))
-        cur.execute("UPDATE moves SET coordinatorId = NULL WHERE coordinatorId = %s", (staff_id,))
-        cur.execute("UPDATE moves SET driverId = NULL WHERE driverId = %s", (staff_id,))
-        cur.execute("UPDATE moves SET secretaryId = NULL WHERE secretaryId = %s", (staff_id,))
-        
-        # 4. Agora pode deletar o funcionário
-        cur.execute("DELETE FROM staff WHERE id = %s", (staff_id,))
-        
-        conn.commit()
-        cur.close()
-        return True
-        
-    except Exception as e:
-        st.error(f"Erro ao deletar funcionário: {e}")
-        if conn:
-            conn.rollback()
-        return False
+    """Deleta funcionário"""
+    query = "DELETE FROM staff WHERE id = %s"
+    return execute_query(query, (staff_id,))
 
-def delete_resident(resident_id):
-    """
-    Deleta um morador.
-    Antes de deletar, remove as ordens de serviço associadas.
-    """
-    conn = get_connection()
-    if conn is None:
-        return False
-    
-    try:
-        cur = conn.cursor()
-        
-        # 1. Deletar ordens de serviço deste morador
-        cur.execute("DELETE FROM moves WHERE residentId = %s", (resident_id,))
-        
-        # 2. Agora pode deletar o morador
-        cur.execute("DELETE FROM residents WHERE id = %s", (resident_id,))
-        
-        conn.commit()
-        cur.close()
-        return True
-        
-    except Exception as e:
-        st.error(f"Erro ao deletar morador: {e}")
-        if conn:
-            conn.rollback()
-        return False
+# --- FUNÇÕES DE RESIDENTS ---
 
-def delete_move(move_id):
-    """Deleta uma ordem de serviço."""
-    query = "DELETE FROM moves WHERE id = %s"
-    params = (move_id,)
+def insert_resident(resident_data):
+    """Insere novo morador"""
+    query = """
+        INSERT INTO residents (
+            name, selo, contact, "originAddress", "originNumber", "originNeighborhood",
+            "destAddress", "destNumber", "destNeighborhood", observation, 
+            "moveDate", "moveTime", "secretaryId"
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    params = (
+        resident_data['name'],
+        resident_data.get('selo'),
+        resident_data.get('contact'),
+        resident_data.get('originAddress'),
+        resident_data.get('originNumber'),
+        resident_data.get('originNeighborhood'),
+        resident_data.get('destAddress'),
+        resident_data.get('destNumber'),
+        resident_data.get('destNeighborhood'),
+        resident_data.get('observation'),
+        resident_data.get('moveDate'),
+        resident_data.get('moveTime'),
+        resident_data.get('secretaryId')
+    )
     return execute_query(query, params)
 
-# ==============================================================================
-# NOVAS FUNÇÕES - FUNCIONALIDADES ADICIONAIS
-# ==============================================================================
+def update_resident(resident_id, name, contact, observation):
+    """Atualiza morador"""
+    query = """
+        UPDATE residents 
+        SET name = %s, contact = %s, observation = %s
+        WHERE id = %s
+    """
+    return execute_query(query, (name, contact, observation, resident_id))
+
+def delete_resident(resident_id):
+    """Deleta morador"""
+    query = "DELETE FROM residents WHERE id = %s"
+    return execute_query(query, (resident_id,))
+
+# --- FUNÇÕES DE MOVES ---
+
+def insert_move(move_data):
+    """Insere nova OS"""
+    query = """
+        INSERT INTO moves (
+            "residentId", date, time, metragem, "supervisorId", 
+            "coordinatorId", "driverId", status, "secretaryId"
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    params = (
+        move_data['residentId'],
+        move_data['date'],
+        move_data['time'],
+        move_data.get('metragem', 0),
+        move_data.get('supervisorId'),
+        move_data.get('coordinatorId'),
+        move_data.get('driverId'),
+        move_data.get('status', 'A realizar'),
+        move_data.get('secretaryId')
+    )
+    return execute_query(query, params)
+
+def update_move_details(move_id, updates):
+    """
+    Atualiza campos específicos de uma OS.
+    
+    Args:
+        move_id: ID da OS
+        updates: Dict com campos a atualizar
+    """
+    if not updates:
+        return False
+    
+    set_clause = ", ".join([f'"{k}" = %s' for k in updates.keys()])
+    query = f"UPDATE moves SET {set_clause} WHERE id = %s"
+    params = list(updates.values()) + [move_id]
+    
+    return execute_query(query, params)
+
+def delete_move(move_id):
+    """Deleta OS"""
+    query = "DELETE FROM moves WHERE id = %s"
+    return execute_query(query, (move_id,))
+
+# --- FUNÇÕES DE SECRETARIES ---
+
+def insert_secretary(secretary_data):
+    """Insere nova secretária"""
+    query = """
+        INSERT INTO secretaries (name, branch)
+        VALUES (%s, %s)
+        RETURNING id
+    """
+    params = (secretary_data['name'], secretary_data.get('branch'))
+    return execute_query(query, params)
+
+def update_secretary(secretary_id, name, branch):
+    """Atualiza secretária"""
+    query = "UPDATE secretaries SET name = %s, branch = %s WHERE id = %s"
+    return execute_query(query, (name, branch, secretary_id))
+
+def delete_secretary(secretary_id):
+    """Deleta secretária"""
+    query = "DELETE FROM secretaries WHERE id = %s"
+    return execute_query(query, (secretary_id,))
 
 # --- FUNÇÕES DE NOTIFICAÇÕES ---
 
-def insert_notification(userId, title, message, type='info', link=None):
-    """Cria uma nova notificação."""
-    query = """
-        INSERT INTO notifications (userId, title, message, type, link)
-        VALUES (%s, %s, %s, %s, %s)
-    """
-    params = (userId, title, message, type, link)
-    return execute_query(query, params)
-
 def get_user_notifications(userId, unread_only=False):
-    """Busca notificações de um usuário."""
+    """Busca notificações do usuário"""
     if unread_only:
-        query = "SELECT * FROM notifications WHERE userId = %s AND isRead = FALSE ORDER BY createdAt DESC"
+        query = 'SELECT * FROM notifications WHERE "userId" = %s AND "isRead" = FALSE ORDER BY "createdAt" DESC'
     else:
-        query = "SELECT * FROM notifications WHERE userId = %s ORDER BY createdAt DESC LIMIT 50"
+        query = 'SELECT * FROM notifications WHERE "userId" = %s ORDER BY "createdAt" DESC LIMIT 50'
     
     df = execute_query(query, (userId,), fetch_data=True)
     return df.to_dict('records') if df is not None else []
 
 def mark_notification_read(notification_id):
-    """Marca notificação como lida."""
-    query = "UPDATE notifications SET isRead = TRUE WHERE id = %s"
+    """Marca notificação como lida"""
+    query = 'UPDATE notifications SET "isRead" = TRUE WHERE id = %s'
     return execute_query(query, (notification_id,))
 
 def get_unread_count(userId):
-    """Conta notificações não lidas."""
-    query = "SELECT COUNT(*) as count FROM notifications WHERE userId = %s AND isRead = FALSE"
+    """Conta notificações não lidas"""
+    query = 'SELECT COUNT(*) as count FROM notifications WHERE "userId" = %s AND "isRead" = FALSE'
     df = execute_query(query, (userId,), fetch_data=True)
     return df['count'].iloc[0] if df is not None and not df.empty else 0
 
 # --- FUNÇÕES DE ANEXOS ---
 
-def insert_attachment(moveId, fileName, fileType, fileData, uploadedBy, description=None):
-    """Adiciona um anexo (foto/documento) a uma OS."""
-    conn = get_connection()
-    if not conn:
-        return False
-    
-    try:
-        cur = conn.cursor()
-        query = """
-            INSERT INTO attachments (moveId, fileName, fileType, fileData, uploadedBy, description)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        cur.execute(query, (moveId, fileName, fileType, psycopg2.Binary(fileData), uploadedBy, description))
-        conn.commit()
-        cur.close()
-        return True
-    except Exception as e:
-        st.error(f"Erro ao inserir anexo: {e}")
-        conn.rollback()
-        return False
+def insert_attachment(attachment_data):
+    """Insere anexo"""
+    query = """
+        INSERT INTO attachments ("moveId", "fileName", "fileData", "uploadedBy", "uploadedAt")
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
+    """
+    params = (
+        attachment_data['moveId'],
+        attachment_data['fileName'],
+        attachment_data['fileData'],
+        attachment_data['uploadedBy'],
+        attachment_data.get('uploadedAt', datetime.now())
+    )
+    return execute_query(query, params)
 
-def get_attachments(moveId):
-    """Busca todos os anexos de uma OS."""
-    query = "SELECT id, fileName, fileType, uploadedBy, uploadedAt, description FROM attachments WHERE moveId = %s ORDER BY uploadedAt DESC"
-    df = execute_query(query, (moveId,), fetch_data=True)
+def get_attachments_by_move(move_id):
+    """Busca anexos de uma OS"""
+    query = 'SELECT * FROM attachments WHERE "moveId" = %s'
+    df = execute_query(query, (move_id,), fetch_data=True)
     return df.to_dict('records') if df is not None else []
 
-def get_attachment_data(attachment_id):
-    """Busca dados binários de um anexo específico."""
-    query = "SELECT fileData, fileName, fileType FROM attachments WHERE id = %s"
-    df = execute_query(query, (attachment_id,), fetch_data=True)
-    if df is not None and not df.empty:
-        return {
-            'data': bytes(df['filedata'].iloc[0]),
-            'name': df['filename'].iloc[0],
-            'type': df['filetype'].iloc[0]
-        }
-    return None
-
 def delete_attachment(attachment_id):
-    """Deleta um anexo."""
+    """Deleta anexo"""
     query = "DELETE FROM attachments WHERE id = %s"
     return execute_query(query, (attachment_id,))
 
-# --- FUNÇÕES DE WHATSAPP ---
+# --- FUNÇÕES HELPER ---
 
-def mark_whatsapp_sent(move_id):
-    """Marca que WhatsApp foi enviado para uma OS."""
-    query = "UPDATE moves SET whatsappSent = TRUE, whatsappSentAt = CURRENT_TIMESTAMP WHERE id = %s"
-    return execute_query(query, (move_id,))
-
-def get_pending_whatsapp():
-    """Busca OSs que precisam enviar WhatsApp."""
-    query = """
-        SELECT m.*, r.name as residentName, r.phone as residentPhone
-        FROM moves m
-        JOIN residents r ON m.residentId = r.id
-        WHERE m.whatsappSent = FALSE 
-        AND m.status = 'A realizar'
-        AND r.phone IS NOT NULL
-        ORDER BY m.date ASC
-    """
+def ensure_secretary_id():
+    """Garante que existe uma secretária padrão"""
+    query = "SELECT id FROM secretaries LIMIT 1"
     df = execute_query(query, fetch_data=True)
-    return df.to_dict('records') if df is not None else []
+    
+    if df is not None and not df.empty:
+        return df.iloc[0]['id']
+    
+    # Criar secretária padrão
+    query = "INSERT INTO secretaries (name, branch) VALUES (%s, %s) RETURNING id"
+    result = execute_query(query, ('Secretaria Padrão', 'Principal'), fetch_data=True)
+    
+    if result is not None and not result.empty:
+        return result.iloc[0]['id']
+    
+    return None
 
-# --- FUNÇÕES DE ROTA ---
+# --- VERIFICAÇÃO DE SAÚDE DO BANCO ---
 
-def update_route_info(move_id, distance, duration, origin_lat, origin_lng, dest_lat, dest_lng):
-    """Atualiza informações de rota de uma OS."""
-    query = """
-        UPDATE moves 
-        SET distance = %s, estimatedDuration = %s, 
-            originLat = %s, originLng = %s, 
-            destLat = %s, destLng = %s
-        WHERE id = %s
+def check_database_health():
     """
-    params = (distance, duration, origin_lat, origin_lng, dest_lat, dest_lng, move_id)
-    return execute_query(query, params)
-
-# --- FUNÇÕES DE RELATÓRIOS ---
-
-def get_report_data(start_date=None, end_date=None):
-    """Busca dados para relatórios."""
-    base_query = """
-        SELECT 
-            m.*,
-            r.name as clientName,
-            r.originAddress,
-            r.destAddress,
-            s.name as supervisorName,
-            c.name as coordinatorName,
-            d.name as driverName,
-            sec.name as secretaryName
-        FROM moves m
-        LEFT JOIN residents r ON m.residentId = r.id
-        LEFT JOIN staff s ON m.supervisorId = s.id
-        LEFT JOIN staff c ON m.coordinatorId = c.id
-        LEFT JOIN staff d ON m.driverId = d.id
-        LEFT JOIN staff sec ON m.secretaryId = sec.id
-        WHERE 1=1
+    Verifica saúde da conexão com banco de dados.
+    Retorna dict com estatísticas.
     """
+    try:
+        with get_db_connection() as conn:
+            if conn is None:
+                return {'status': 'error', 'message': 'Não foi possível conectar'}
+            
+            cur = conn.cursor()
+            
+            # Contar registros
+            stats = {}
+            
+            cur.execute("SELECT COUNT(*) FROM staff")
+            stats['staff_count'] = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM residents")
+            stats['residents_count'] = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM moves")
+            stats['moves_count'] = cur.fetchone()[0]
+            
+            cur.execute("SELECT COUNT(*) FROM notifications")
+            stats['notifications_count'] = cur.fetchone()[0]
+            
+            # Verificar índices
+            cur.execute("""
+                SELECT COUNT(*) 
+                FROM pg_indexes 
+                WHERE schemaname = 'public'
+            """)
+            stats['indexes_count'] = cur.fetchone()[0]
+            
+            cur.close()
+            
+            return {
+                'status': 'healthy',
+                'stats': stats,
+                'pool_size': init_connection_pool()._pool.__len__() if init_connection_pool() else 0
+            }
+            
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': str(e)
+        }
+
+# --- OTIMIZAÇÃO: CRIAR ÍNDICES ---
+
+def create_performance_indexes():
+    """
+    Cria índices para melhorar performance de queries frequentes.
+    Execute uma vez após criar as tabelas.
+    """
+    indexes = [
+        'CREATE INDEX IF NOT EXISTS idx_moves_resident ON moves("residentId")',
+        'CREATE INDEX IF NOT EXISTS idx_moves_date ON moves(date)',
+        'CREATE INDEX IF NOT EXISTS idx_moves_status ON moves(status)',
+        'CREATE INDEX IF NOT EXISTS idx_staff_email ON staff(email)',
+        'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications("userId")',
+        'CREATE INDEX IF NOT EXISTS idx_attachments_move ON attachments("moveId")',
+    ]
     
-    params = []
-    if start_date:
-        base_query += " AND m.date >= %s"
-        params.append(start_date)
-    if end_date:
-        base_query += " AND m.date <= %s"
-        params.append(end_date)
+    queries_params = [(idx, None) for idx in indexes]
+    success = execute_batch(queries_params)
     
-    base_query += " ORDER BY m.date DESC"
+    if success:
+        st.success("✅ Índices criados/atualizados com sucesso!")
+    else:
+        st.error("❌ Erro ao criar índices")
     
-    df = execute_query(base_query, tuple(params) if params else None, fetch_data=True)
-    return df if df is not None else pd.DataFrame()
+    return success
