@@ -749,13 +749,32 @@ def manage_moves():
             residents = st.session_state.data['residents']
             
             # Validar se move tem residentId
-            if not move.get('residentId'):
-                st.warning(f"⚠️ OS #{move.get('id', '?')} sem cliente vinculado")
+            resident_id = move.get('residentId') or move.get('residentid')
+            
+            if not resident_id:
+                # OS sem cliente - mostrar card de erro
+                st.error(f"⚠️ **OS #{move.get('id', '?')} SEM CLIENTE VINCULADO**")
+                
+                col_warn1, col_warn2 = st.columns([3, 1])
+                
+                with col_warn1:
+                    st.caption(f"📅 Data: {move.get('date', 'N/A')} • 🕐 Hora: {move.get('time', 'N/A')} • Status: {move.get('status', 'N/A')}")
+                    st.caption("💡 Esta OS foi criada sem vincular um cliente. Execute o SQL de limpeza no Supabase para remover.")
+                
+                with col_warn2:
+                    if st.button("📋 Ver SQL", key=f"sql_orphan_{move['id']}", use_container_width=True):
+                        st.code(f"DELETE FROM moves WHERE id = {move['id']};", language="sql")
+                
+                st.divider()
                 continue
             
-            resident = next((r for r in residents if r.get('id') == move.get('residentId')), None)
+            # Buscar cliente
+            resident = next((r for r in residents if r.get('id') == resident_id), None)
             
             if not resident:
+                st.warning(f"⚠️ OS #{move.get('id', '?')} vinculada ao cliente ID {resident_id}, mas cliente não encontrado no banco.")
+                st.caption("💡 Cliente pode ter sido excluído. Execute SQL para limpar: `DELETE FROM moves WHERE id = {move['id']};`")
+                st.divider()
                 continue
             
             # Emoji do status
