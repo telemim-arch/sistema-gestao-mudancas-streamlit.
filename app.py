@@ -1942,19 +1942,103 @@ def manage_secretaries():
 def manage_roles():
     st.title("🛡️ Gestão de Cargos")
     
-    st.info("Cargos padrão do sistema. Para adicionar novos cargos, contate o administrador.")
+    st.markdown("""
+    ### Cargos do Sistema Telemim Mudanças
     
-    if st.button("Adicionar Novo Cargo (Admin)", type="secondary"):
-        name = st.text_input("Nome do Cargo")
-        perm = st.selectbox("Permissão", list(ROLES.keys()))
-        
-        if st.button("Criar"):
-            if name:
-                perm_key = next(key for key, value in ROLES.items() if value == perm)
-                st.session_state.data['roles'].append({'id': int(time.time()), 'name': name, 'permission': perm_key})
-                st.success("Cargo criado.")
+    Os cargos abaixo são padrão do sistema e não podem ser editados ou removidos.
+    Cada funcionário deve ser cadastrado com um destes cargos.
+    """)
+    
+    # Cargos fixos do sistema
+    cargos_fixos = [
+        {
+            "Cargo": "📋 Coordenador",
+            "Permissão": "COORDINATOR",
+            "Descrição": "Coordena equipes e operações de mudança",
+            "Acesso": "Visualizar e gerenciar OSs, atribuir equipes"
+        },
+        {
+            "Cargo": "🔧 Supervisor", 
+            "Permissão": "SUPERVISOR",
+            "Descrição": "Supervisiona execução das mudanças",
+            "Acesso": "Executar OSs, atualizar status, ver equipe"
+        },
+        {
+            "Cargo": "🚛 Motorista",
+            "Permissão": "DRIVER", 
+            "Descrição": "Realiza o transporte das mudanças",
+            "Acesso": "Visualizar suas OSs designadas"
+        },
+        {
+            "Cargo": "📝 Secretária",
+            "Permissão": "SECRETARY",
+            "Descrição": "Gerencia cadastros e agendamentos",
+            "Acesso": "Cadastrar clientes, agendar mudanças, gerenciar funcionários"
+        },
+        {
+            "Cargo": "👑 Administrador",
+            "Permissão": "ADMIN",
+            "Descrição": "Acesso total ao sistema",
+            "Acesso": "Todas as funcionalidades, gestão completa"
+        }
+    ]
+    
+    # Mostrar em cards
+    for cargo in cargos_fixos:
+        with st.expander(f"{cargo['Cargo']} - {cargo['Permissão']}", expanded=False):
+            st.markdown(f"**Descrição:** {cargo['Descrição']}")
+            st.markdown(f"**Acessos:** {cargo['Acesso']}")
             
-    st.table(pd.DataFrame(st.session_state.data['roles']))
+            # Contar quantos funcionários tem este cargo
+            staff = st.session_state.data.get('staff', [])
+            count = len([s for s in staff if s.get('role') == cargo['Permissão']])
+            
+            if count > 0:
+                st.success(f"✅ {count} funcionário(s) com este cargo")
+            else:
+                st.info(f"ℹ️ Nenhum funcionário com este cargo")
+    
+    st.divider()
+    
+    # Resumo
+    st.subheader("📊 Resumo por Cargo")
+    
+    staff = st.session_state.data.get('staff', [])
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        coord_count = len([s for s in staff if s.get('role') == 'COORDINATOR'])
+        st.metric("📋 Coordenadores", coord_count)
+    
+    with col2:
+        sup_count = len([s for s in staff if s.get('role') == 'SUPERVISOR'])
+        st.metric("🔧 Supervisores", sup_count)
+    
+    with col3:
+        drv_count = len([s for s in staff if s.get('role') == 'DRIVER'])
+        st.metric("🚛 Motoristas", drv_count)
+    
+    with col4:
+        sec_count = len([s for s in staff if s.get('role') == 'SECRETARY'])
+        st.metric("📝 Secretárias", sec_count)
+    
+    with col5:
+        admin_count = len([s for s in staff if s.get('role') == 'ADMIN'])
+        st.metric("👑 Admins", admin_count)
+    
+    st.divider()
+    
+    st.info("""
+    💡 **Como usar:**
+    
+    1. Vá em **👥 Funcionários**
+    2. Cadastre novo funcionário
+    3. Selecione um dos cargos acima
+    4. O funcionário terá as permissões do cargo automaticamente
+    
+    ⚠️ **Importante:** Os cargos são fixos e não podem ser alterados para manter a integridade do sistema.
+    """)
 
 def reports_page():
     """Página de relatórios simples (legacy)"""
