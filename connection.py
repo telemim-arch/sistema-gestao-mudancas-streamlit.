@@ -42,9 +42,11 @@ def get_db_connection():
         yield conn
     except Exception as e:
         if conn:
-            conn.rollback()
-        st.error(f"❌ Erro na conexão: {e}")
-        yield None
+            try:
+                conn.rollback()
+            except:
+                pass
+        raise  # Re-raise para que o erro seja tratado pelo chamador
     finally:
         if conn:
             try:
@@ -81,12 +83,20 @@ def execute_query(query, params=None, fetch_data=False, retry=3):
                     cur.close()
                     return True
                     
+        except psycopg2.IntegrityError as e:
+            # Erro de constraint (duplicate key, etc) - não retentar
+            if "duplicate key" in str(e):
+                return False
+            if attempt < retry - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            else:
+                return None if fetch_data else False
         except Exception as e:
             if attempt < retry - 1:
                 time.sleep(0.5 * (attempt + 1))
                 continue
             else:
-                st.error(f"❌ Erro: {e}")
                 return None if fetch_data else False
     
     return None if fetch_data else False
@@ -95,72 +105,78 @@ def execute_query(query, params=None, fetch_data=False, retry=3):
 
 def fetch_all_data():
     """Busca todos os dados"""
-    data = {}
+    data = {
+        'staff': [], 'residents': [], 'moves': [],
+        'secretaries': [], 'roles': [], 'notifications': [], 'attachments': []
+    }
     
     try:
         with get_db_connection() as conn:
             if conn is None:
-                return {
-                    'staff': [], 'residents': [], 'moves': [],
-                    'secretaries': [], 'roles': [], 'notifications': [], 'attachments': []
-                }
+                return data
             
             cur = conn.cursor()
             
             # Staff
-            cur.execute("SELECT * FROM staff")
-            columns = [desc[0] for desc in cur.description]
-            df = pd.DataFrame(cur.fetchall(), columns=columns)
-            data['staff'] = df.where(pd.notnull(df), None).to_dict('records')
+            try:
+                cur.execute("SELECT * FROM staff")
+                columns = [desc[0] for desc in cur.description]
+                df = pd.DataFrame(cur.fetchall(), columns=columns)
+                data['staff'] = df.where(pd.notnull(df), None).to_dict('records')
+            except Exception as e:
+                st.warning(f"Tabela staff: {e}")
             
             # Residents
-            cur.execute("SELECT * FROM residents")
-            columns = [desc[0] for desc in cur.description]
-            df = pd.DataFrame(cur.fetchall(), columns=columns)
-            data['residents'] = df.where(pd.notnull(df), None).to_dict('records')
+            try:
+                cur.execute("SELECT * FROM residents")
+                columns = [desc[0] for desc in cur.description]
+                df = pd.DataFrame(cur.fetchall(), columns=columns)
+                data['residents'] = df.where(pd.notnull(df), None).to_dict('records')
+            except Exception as e:
+                st.warning(f"Tabela residents: {e}")
             
             # Moves
-            cur.execute("SELECT * FROM moves")
-            columns = [desc[0] for desc in cur.description]
-            df = pd.DataFrame(cur.fetchall(), columns=columns)
-            data['moves'] = df.where(pd.notnull(df), None).to_dict('records')
+            try:
+                cur.execute("SELECT * FROM moves")
+                columns = [desc[0] for desc in cur.description]
+                df = pd.DataFrame(cur.fetchall(), columns=columns)
+                data['moves'] = df.where(pd.notnull(df), None).to_dict('records')
+            except Exception as e:
+                st.warning(f"Tabela moves: {e}")
             
-            # Secretaries (tentar buscar, se não existir retornar vazio)
+            # Secretaries (opcional)
             try:
                 cur.execute("SELECT * FROM secretaries")
                 columns = [desc[0] for desc in cur.description]
                 df = pd.DataFrame(cur.fetchall(), columns=columns)
                 data['secretaries'] = df.where(pd.notnull(df), None).to_dict('records')
             except:
-                data['secretaries'] = []
+                pass  # Tabela não existe, ok
             
             # Roles
-            cur.execute("SELECT * FROM roles")
-            columns = [desc[0] for desc in cur.description]
-            df = pd.DataFrame(cur.fetchall(), columns=columns)
-            data['roles'] = df.to_dict('records')
+            try:
+                cur.execute("SELECT * FROM roles")
+                columns = [desc[0] for desc in cur.description]
+                df = pd.DataFrame(cur.fetchall(), columns=columns)
+                data['roles'] = df.to_dict('records')
+            except:
+                pass
             
-            # Notifications (não existe - retornar vazio)
-            data['notifications'] = []
-            
-            # Attachments (tentar buscar)
+            # Attachments (opcional)
             try:
                 cur.execute("SELECT * FROM attachments")
                 columns = [desc[0] for desc in cur.description]
                 df = pd.DataFrame(cur.fetchall(), columns=columns)
                 data['attachments'] = df.to_dict('records')
             except:
-                data['attachments'] = []
+                pass  # Tabela não existe, ok
             
             cur.close()
             return data
             
     except Exception as e:
-        st.error(f"❌ Erro ao carregar: {e}")
-        return {
-            'staff': [], 'residents': [], 'moves': [],
-            'secretaries': [], 'roles': [], 'notifications': [], 'attachments': []
-        }
+        st.error(f"❌ Erro ao carregar dados: {e}")
+        return data
 
 # --- AUTENTICAÇÃO ---
 
