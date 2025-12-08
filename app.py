@@ -689,18 +689,16 @@ def reports_analytics_page():
 def manage_moves():
     st.title("📦 Ordens de Serviço e Agendamento")
     
-    # Tabs: Ver OSs, Agendar Nova, Mudanças Agendadas
-    tab1, tab2, tab3 = st.tabs(["📋 Ver Ordens", "➕ Agendar Nova", "📅 Mudanças Agendadas"])
+    # Tabs: Ver OSs OU Criar nova OU Lista de Mudanças
+    tab1, tab2, tab3 = st.tabs(["📋 Ver Ordens", "➕ Nova Ordem", "📅 Mudanças Agendadas"])
     
     with tab1:
-        # ============================================
-        # TAB 1: VISUALIZAR OSs EXISTENTES
-        # ============================================
+        # VISUALIZAR OSs EXISTENTES
         moves = filter_by_scope(st.session_state.data['moves'])
         
         if not moves:
             st.info("💡 Nenhuma OS registrada ainda.")
-            st.markdown("Clique na aba **➕ Agendar Nova** para criar a primeira!")
+            st.markdown("Clique na aba **➕ Nova Ordem** para criar a primeira!")
             return
 
         st.subheader("📋 Todas as Ordens de Serviço")
@@ -750,255 +748,172 @@ def manage_moves():
         for move in filtered_moves:
             residents = st.session_state.data['residents']
             
-            # Buscar morador
-            resident = next((r for r in residents 
-                           if r['id'] == move.get('residentId') 
-                           or r['id'] == move.get('residentid')), None)
+            # Validar se move tem residentId
+            if not move.get('residentId'):
+                st.warning(f"⚠️ OS #{move.get('id', '?')} sem cliente vinculado")
+                continue
+            
+            resident = next((r for r in residents if r.get('id') == move.get('residentId')), None)
             
             if not resident:
                 continue
             
-            # Card colorido por status
+            # Emoji do status
+            status_config = {
+                'A realizar': {'emoji': '🟡', 'color': '#FFA726'},
+                'Realizando': {'emoji': '🔵', 'color': '#42A5F5'},
+                'Concluído': {'emoji': '🟢', 'color': '#66BB6A'}
+            }
+            
             status = move.get('status', 'A realizar')
+            config = status_config.get(status, {'emoji': '⚪', 'color': '#999'})
             
-            if status == 'Concluído':
-                bg_color = "#E8F5E9"
-                border_color = "#4CAF50"
-                status_emoji = "🟢"
-            elif status == 'Realizando':
-                bg_color = "#E3F2FD"
-                border_color = "#2196F3"
-                status_emoji = "🔵"
-            else:
-                bg_color = "#FFF9C4"
-                border_color = "#FFC107"
-                status_emoji = "🟡"
-            
-            # Cabeçalho do card
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, {bg_color} 0%, #FFFFFF 100%);
-                        border-left: 6px solid {border_color};
-                        padding: 20px;
-                        border-radius: 10px;
-                        margin-bottom: 15px;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <h3 style="margin: 0; color: #333;">
-                    {status_emoji} {resident.get('name', 'N/A')}
-                </h3>
-                <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">
-                    🕐 {move.get('time', 'N/A')} • 
-                    📦 {move.get('metragem', 0)} m³ • 
-                    📋 OS #{move.get('id', '?')}
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Linha de ações rápidas
-            col_act1, col_act2, col_act3, col_act4 = st.columns([2, 2, 2, 1])
-            
-            with col_act1:
-                # Dropdown de status
-                status_options = ["A realizar", "Realizando", "Concluído"]
-                current_idx = status_options.index(status) if status in status_options else 0
+            # Container da OS
+            with st.container():
+                # Cabeçalho da OS
+                col_header1, col_header2, col_header3 = st.columns([3, 2, 1])
                 
-                new_status = st.selectbox(
-                    "Status",
-                    status_options,
-                    index=current_idx,
-                    key=f"status_{move['id']}",
-                    label_visibility="collapsed"
-                )
+                with col_header1:
+                    st.markdown(f"### {config['emoji']} OS #{move['id']} - {resident['name']}")
                 
-                # Botão de atualizar status
-                if new_status != status:
-                    if st.button("✅ Atualizar", key=f"update_status_{move['id']}", use_container_width=True):
-                        updated = {'status': new_status}
-                        if new_status == "Concluído":
-                            from datetime import datetime
-                            updated['completionDate'] = str(datetime.now().date())
-                            updated['completionTime'] = str(datetime.now().time().strftime('%H:%M'))
+                with col_header2:
+                    try:
+                        move_date = datetime.strptime(str(move['date']), '%Y-%m-%d')
+                        st.markdown(f"**📅 {move_date.strftime('%d/%m/%Y')}** às **🕐 {move.get('time', 'N/A')}**")
+                    except:
+                        st.markdown(f"**📅 {move.get('date', 'N/A')}** às **🕐 {move.get('time', 'N/A')}**")
+                
+                with col_header3:
+                    st.markdown(f"**{status}**", help=f"Status atual da OS")
+                
+                # Detalhes e ações
+                with st.expander("📋 Ver Detalhes e Editar", expanded=False):
+                    col_det1, col_det2 = st.columns(2)
+                    
+                    with col_det1:
+                        st.markdown("**📍 Endereços**")
+                        st.write(f"**Origem:** {resident.get('originAddress', 'N/A')}, {resident.get('originNumber', '')}")
+                        st.write(f"**Bairro:** {resident.get('originNeighborhood', 'N/A')}")
+                        st.write(f"**Destino:** {resident.get('destAddress', 'N/A')}, {resident.get('destNumber', '')}")
+                        st.write(f"**Bairro:** {resident.get('destNeighborhood', 'N/A')}")
                         
-                        if update_move_details(move['id'], updated):
-                            st.session_state.data = fetch_all_data()
-                            st.toast(f"✅ Status atualizado: {new_status}")
-                            time.sleep(0.3)
-                            st.rerun()
-            
-            with col_act2:
-                if resident.get('contact'):
-                    st.write(f"📞 {resident['contact']}")
-                else:
-                    st.write("📞 Sem contato")
-            
-            with col_act3:
-                # Equipe resumida
-                team_parts = []
-                staff_data = st.session_state.data.get('staff', [])
+                        if resident.get('observation'):
+                            st.markdown("**📝 Observações:**")
+                            st.info(resident['observation'])
+                    
+                    with col_det2:
+                        st.markdown("**👥 Equipe**")
+                        
+                        # Supervisor
+                        sup_id = move.get('supervisorId')
+                        if sup_id:
+                            sup_name = get_name_by_id(st.session_state.data['staff'], sup_id)
+                            st.write(f"🔧 **Supervisor:** {sup_name}")
+                        
+                        # Coordenador
+                        coord_id = move.get('coordinatorId')
+                        if coord_id:
+                            coord_name = get_name_by_id(st.session_state.data['staff'], coord_id)
+                            st.write(f"📋 **Coordenador:** {coord_name}")
+                        
+                        # Motorista
+                        drv_id = move.get('driverId')
+                        if drv_id:
+                            drv_name = get_name_by_id(st.session_state.data['staff'], drv_id)
+                            st.write(f"🚛 **Motorista:** {drv_name}")
+                        
+                        # Contato
+                        if resident.get('contact'):
+                            st.write(f"📞 **Contato:** {resident['contact']}")
+                    
+                    st.divider()
+                    
+                    # AÇÕES: Alterar Status e Volume
+                    st.markdown("### ⚙️ Ações Rápidas")
+                    
+                    col_act1, col_act2, col_act3 = st.columns(3)
+                    
+                    with col_act1:
+                        st.markdown("**📊 Alterar Status**")
+                        new_status = st.selectbox(
+                            "Novo status",
+                            ["A realizar", "Realizando", "Concluído"],
+                            index=["A realizar", "Realizando", "Concluído"].index(status),
+                            key=f"status_{move['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if st.button("✅ Atualizar Status", key=f"btn_status_{move['id']}", use_container_width=True):
+                            if new_status != status:
+                                updated_data = {
+                                    'status': new_status
+                                }
+                                
+                                # Se concluído, adicionar data/hora de conclusão
+                                if new_status == "Concluído":
+                                    updated_data['completionDate'] = str(datetime.now().date())
+                                    updated_data['completionTime'] = str(datetime.now().time().strftime('%H:%M'))
+                                
+                                if update_move_details(move['id'], updated_data):
+                                    st.session_state.data = fetch_all_data()
+                                    st.toast(f"✅ Status alterado para: {new_status}")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao atualizar")
+                            else:
+                                st.info("Status não foi alterado")
+                    
+                    with col_act2:
+                        st.markdown("**📦 Volume (m³)**")
+                        current_volume = move.get('metragem', 0.0)
+                        new_volume = st.number_input(
+                            "Volume",
+                            min_value=0.0,
+                            step=0.5,
+                            value=float(current_volume) if current_volume else 0.0,
+                            key=f"volume_{move['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if st.button("✅ Atualizar Volume", key=f"btn_volume_{move['id']}", use_container_width=True):
+                            if new_volume != current_volume:
+                                if update_move_details(move['id'], {'metragem': new_volume}):
+                                    st.session_state.data = fetch_all_data()
+                                    st.toast(f"✅ Volume atualizado: {new_volume} m³")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao atualizar")
+                            else:
+                                st.info("Volume não foi alterado")
+                    
+                    with col_act3:
+                        st.markdown("**📅 Reagendar**")
+                        new_date = st.date_input(
+                            "Nova data",
+                            value=datetime.strptime(str(move['date']), '%Y-%m-%d').date() if move.get('date') else datetime.now().date(),
+                            key=f"date_{move['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if st.button("✅ Reagendar", key=f"btn_date_{move['id']}", use_container_width=True):
+                            if str(new_date) != str(move.get('date')):
+                                if update_move_details(move['id'], {'date': str(new_date)}):
+                                    st.session_state.data = fetch_all_data()
+                                    st.toast(f"✅ Reagendado para: {new_date.strftime('%d/%m/%Y')}")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Erro ao atualizar")
+                            else:
+                                st.info("Data não foi alterada")
                 
-                if move.get('supervisorId') or move.get('supervisorid'):
-                    sup_id = move.get('supervisorId') or move.get('supervisorid')
-                    sup = next((s for s in staff_data if s['id'] == sup_id), None)
-                    if sup:
-                        team_parts.append(f"👷 {sup['name'].split()[0]}")
-                
-                if move.get('driverId') or move.get('driverid'):
-                    drv_id = move.get('driverId') or move.get('driverid')
-                    drv = next((s for s in staff_data if s['id'] == drv_id), None)
-                    if drv:
-                        team_parts.append(f"🚛 {drv['name'].split()[0]}")
-                
-                if team_parts:
-                    st.caption(" • ".join(team_parts))
-                else:
-                    st.caption("⚠️ Sem equipe")
-            
-            with col_act4:
-                # Botão de expandir
-                if st.button("📋", key=f"expand_{move['id']}", help="Ver detalhes"):
-                    st.session_state[f"expanded_{move['id']}"] = not st.session_state.get(f"expanded_{move['id']}", False)
-                    st.rerun()
-            
-            # Detalhes expandidos
-            if st.session_state.get(f"expanded_{move['id']}", False):
                 st.markdown("---")
-                
-                col_det1, col_det2 = st.columns(2)
-                
-                with col_det1:
-                    st.markdown("**📍 Endereços:**")
-                    st.write(f"**Origem:** {resident.get('originAddress', 'N/A')}, {resident.get('originNumber', '')}")
-                    st.caption(f"Bairro: {resident.get('originNeighborhood', 'N/A')}")
-                    st.write(f"**Destino:** {resident.get('destAddress', 'N/A')}, {resident.get('destNumber', '')}")
-                    st.caption(f"Bairro: {resident.get('destNeighborhood', 'N/A')}")
-                
-                with col_det2:
-                    st.markdown("**👥 Equipe Completa:**")
-                    
-                    sup_id = move.get('supervisorId') or move.get('supervisorid')
-                    coord_id = move.get('coordinatorId') or move.get('coordinatorid')
-                    drv_id = move.get('driverId') or move.get('driverid')
-                    
-                    if sup_id:
-                        sup = next((s for s in staff_data if s['id'] == sup_id), None)
-                        if sup:
-                            st.write(f"🔧 **Supervisor:** {sup['name']}")
-                    
-                    if coord_id:
-                        coord = next((s for s in staff_data if s['id'] == coord_id), None)
-                        if coord:
-                            st.write(f"📋 **Coordenador:** {coord['name']}")
-                    
-                    if drv_id:
-                        drv = next((s for s in staff_data if s['id'] == drv_id), None)
-                        if drv:
-                            st.write(f"🚛 **Motorista:** {drv['name']}")
-                    
-                    if not any([sup_id, coord_id, drv_id]):
-                        st.warning("⚠️ Nenhuma equipe atribuída")
-                
-                if resident.get('observation'):
-                    st.markdown("**📝 Observações:**")
-                    st.info(resident['observation'])
-                
-                st.markdown("---")
-                st.markdown("**🔧 Atribuir Equipe:**")
-                
-                col_eq1, col_eq2, col_eq3 = st.columns(3)
-                
-                with col_eq1:
-                    st.markdown("**👷 Supervisor:**")
-                    supervisors = [s for s in staff_data if s.get('role') == 'SUPERVISOR']
-                    sup_options = {"(Nenhum)": None}
-                    for s in supervisors:
-                        sup_options[s['name']] = s['id']
-                    
-                    current_sup_name = "(Nenhum)"
-                    if sup_id:
-                        for name, sid in sup_options.items():
-                            if sid == sup_id:
-                                current_sup_name = name
-                                break
-                    
-                    selected_sup = st.selectbox(
-                        "Supervisor",
-                        list(sup_options.keys()),
-                        index=list(sup_options.keys()).index(current_sup_name),
-                        key=f"sup_{move['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    if st.button("✅ Salvar", key=f"save_sup_{move['id']}", use_container_width=True):
-                        if update_move_details(move['id'], {'supervisorId': sup_options[selected_sup]}):
-                            st.session_state.data = fetch_all_data()
-                            st.toast("✅ Supervisor atribuído!")
-                            time.sleep(0.3)
-                            st.rerun()
-                
-                with col_eq2:
-                    st.markdown("**📋 Coordenador:**")
-                    coordinators = [s for s in staff_data if s.get('role') == 'COORDINATOR']
-                    coord_options = {"(Nenhum)": None}
-                    for c in coordinators:
-                        coord_options[c['name']] = c['id']
-                    
-                    current_coord_name = "(Nenhum)"
-                    if coord_id:
-                        for name, cid in coord_options.items():
-                            if cid == coord_id:
-                                current_coord_name = name
-                                break
-                    
-                    selected_coord = st.selectbox(
-                        "Coordenador",
-                        list(coord_options.keys()),
-                        index=list(coord_options.keys()).index(current_coord_name),
-                        key=f"coord_{move['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    if st.button("✅ Salvar", key=f"save_coord_{move['id']}", use_container_width=True):
-                        if update_move_details(move['id'], {'coordinatorId': coord_options[selected_coord]}):
-                            st.session_state.data = fetch_all_data()
-                            st.toast("✅ Coordenador atribuído!")
-                            time.sleep(0.3)
-                            st.rerun()
-                
-                with col_eq3:
-                    st.markdown("**🚛 Motorista:**")
-                    drivers = [s for s in staff_data if s.get('role') == 'DRIVER']
-                    drv_options = {"(Nenhum)": None}
-                    for d in drivers:
-                        drv_options[d['name']] = d['id']
-                    
-                    current_drv_name = "(Nenhum)"
-                    if drv_id:
-                        for name, did in drv_options.items():
-                            if did == drv_id:
-                                current_drv_name = name
-                                break
-                    
-                    selected_drv = st.selectbox(
-                        "Motorista",
-                        list(drv_options.keys()),
-                        index=list(drv_options.keys()).index(current_drv_name),
-                        key=f"drv_{move['id']}",
-                        label_visibility="collapsed"
-                    )
-                    
-                    if st.button("✅ Salvar", key=f"save_drv_{move['id']}", use_container_width=True):
-                        if update_move_details(move['id'], {'driverId': drv_options[selected_drv]}):
-                            st.session_state.data = fetch_all_data()
-                            st.toast("✅ Motorista atribuído!")
-                            time.sleep(0.3)
-                            st.rerun()
-            
-            st.divider()
     
     with tab2:
-        # ============================================
-        # TAB 2: AGENDAR NOVA OS
-        # ============================================
-        st.subheader("➕ Agendar Nova Mudança")
+        # CRIAR NOVA OS
+        st.subheader("➕ Criar Nova Ordem de Serviço")
         
         scoped_residents = filter_by_scope(st.session_state.data['residents'])
         scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
@@ -1006,237 +921,763 @@ def manage_moves():
         if not scoped_residents:
             st.warning("⚠️ Nenhum morador cadastrado nesta base.")
             st.info("💡 Cadastre um morador primeiro na aba **🏠 Moradores**")
-            
-            col1, col2, col3 = st.columns([1, 1, 1])
-            with col2:
-                if st.button("➕ Ir para Moradores", type="primary", use_container_width=True):
-                    st.info("👆 Clique na aba '🏠 Moradores' no menu acima")
-        else:
-            # Inicializar contador
-            if 'schedule_form_key' not in st.session_state:
-                st.session_state.schedule_form_key = 0
+            return
+        
+        # Inicializar contador de formulários
+        if 'manage_moves_form_key' not in st.session_state:
+            st.session_state.manage_moves_form_key = 0
 
-            with st.form(f"new_move_schedule_{st.session_state.schedule_form_key}"):
-                st.markdown("#### 📋 Informações da Mudança")
+        with st.form(f"create_move_{st.session_state.manage_moves_form_key}"):
+            st.markdown("#### 📋 Informações da OS")
+            
+            res_map = {r['name']: r['id'] for r in scoped_residents}
+            res_name = st.selectbox("👤 Cliente *", list(res_map.keys()), 
+                                    help="Selecione o morador/cliente desta mudança")
+            
+            st.divider()
+            
+            c1, c2 = st.columns(2)
+            m_date = c1.date_input("📅 Data da Mudança *", help="Data prevista")
+            m_time = c2.time_input("🕐 Hora *", help="Horário previsto")
+            
+            metragem = st.number_input("📦 Volume (m³)", 
+                                       min_value=0.0, 
+                                       step=0.5, 
+                                       value=0.0,
+                                       help="Volume estimado em metros cúbicos")
+            
+            st.divider()
+            st.markdown("#### 👥 Equipe (Opcional)")
+            
+            supervisors = [s for s in scoped_staff if s['role'] in ['SUPERVISOR', 'ADMIN']]
+            coordinators = [s for s in scoped_staff if s['role'] in ['COORDINATOR', 'ADMIN']]
+            drivers = [s for s in scoped_staff if s['role'] in ['DRIVER']]
+            
+            sup_id = None
+            coord_id = None
+            drv_id = None
+            
+            col_sup, col_coord, col_drv = st.columns(3)
+            
+            with col_sup:
+                if supervisors:
+                    sup_options = ["Nenhum"] + [s['name'] for s in supervisors]
+                    sup_name = st.selectbox("🔧 Supervisor", sup_options)
+                    if sup_name != "Nenhum":
+                        sup_id = next((s['id'] for s in supervisors if s['name'] == sup_name), None)
+                else:
+                    st.info("💡 Sem supervisor")
+            
+            with col_coord:
+                if coordinators:
+                    coord_options = ["Nenhum"] + [s['name'] for s in coordinators]
+                    coord_name = st.selectbox("📋 Coordenador", coord_options)
+                    if coord_name != "Nenhum":
+                        coord_id = next((s['id'] for s in coordinators if s['name'] == coord_name), None)
+                else:
+                    st.info("💡 Sem coordenador")
+            
+            with col_drv:
+                if drivers:
+                    drv_options = ["Nenhum"] + [s['name'] for s in drivers]
+                    drv_name = st.selectbox("🚛 Motorista", drv_options)
+                    if drv_name != "Nenhum":
+                        drv_id = next((s['id'] for s in drivers if s['name'] == drv_name), None)
+                else:
+                    st.info("💡 Sem motorista")
+            
+            st.divider()
+            submit = st.form_submit_button("✅ Criar Ordem de Serviço", 
+                                           type="primary", 
+                                           use_container_width=True)
+            
+            if submit:
+                new_move = {
+                    'residentId': res_map[res_name],
+                    'date': str(m_date),
+                    'time': str(m_time),
+                    'metragem': metragem,
+                    'supervisorId': sup_id,
+                    'coordinatorId': coord_id,
+                    'driverId': drv_id,
+                    'status': 'A realizar',
+                    'secretaryId': ensure_secretary_id()
+                }
                 
-                res_map = {r['name']: r['id'] for r in scoped_residents}
-                res_name = st.selectbox("👤 Morador *", list(res_map.keys()), 
-                                        help="Selecione o morador desta mudança")
-                
-                st.divider()
-                
-                c1, c2 = st.columns(2)
-                m_date = c1.date_input("📅 Data da Mudança *", help="Data prevista")
-                m_time = c2.time_input("🕐 Hora *", help="Horário previsto")
-                
-                metragem = st.number_input("📦 Volume (m³)", 
-                                           min_value=0.0, 
-                                           step=0.5, 
-                                           value=0.0,
-                                           help="Volume estimado")
-                
-                st.divider()
-                st.markdown("#### 👥 Equipe (Opcional)")
-                
-                supervisors = [s for s in scoped_staff if s['role'] in ['SUPERVISOR', 'ADMIN']]
-                coordinators = [s for s in scoped_staff if s['role'] in ['COORDINATOR', 'ADMIN']]
-                drivers = [s for s in scoped_staff if s['role'] in ['DRIVER']]
-                
-                sup_id = None
-                coord_id = None
-                drv_id = None
-                
-                col_eq1, col_eq2, col_eq3 = st.columns(3)
-                
-                with col_eq1:
-                    if supervisors:
-                        sup_options = ["Nenhum"] + [s['name'] for s in supervisors]
-                        sup_name = st.selectbox("🔧 Supervisor", sup_options)
-                        if sup_name != "Nenhum":
-                            sup_id = next((s['id'] for s in supervisors if s['name'] == sup_name), None)
-                    else:
-                        st.info("💡 Nenhum supervisor")
-                
-                with col_eq2:
-                    if coordinators:
-                        coord_options = ["Nenhum"] + [s['name'] for s in coordinators]
-                        coord_name = st.selectbox("📋 Coordenador", coord_options)
-                        if coord_name != "Nenhum":
-                            coord_id = next((s['id'] for s in coordinators if s['name'] == coord_name), None)
-                    else:
-                        st.info("💡 Nenhum coordenador")
-                
-                with col_eq3:
-                    if drivers:
-                        drv_options = ["Nenhum"] + [s['name'] for s in drivers]
-                        drv_name = st.selectbox("🚛 Motorista", drv_options)
-                        if drv_name != "Nenhum":
-                            drv_id = next((s['id'] for s in drivers if s['name'] == drv_name), None)
-                    else:
-                        st.info("💡 Nenhum motorista")
-                
-                st.divider()
-                submit = st.form_submit_button("✅ Agendar Mudança", 
-                                               type="primary", 
-                                               use_container_width=True)
-                
-                if submit:
-                    new_move = {
-                        'residentId': res_map[res_name],
-                        'date': str(m_date),
-                        'time': str(m_time),
-                        'metragem': metragem,
-                        'supervisorId': sup_id,
-                        'coordinatorId': coord_id,
-                        'driverId': drv_id,
-                        'status': 'A realizar',
-                        'secretaryId': ensure_secretary_id()
-                    }
+                if insert_move(new_move):
+                    st.session_state.data = fetch_all_data()
+                    st.session_state.manage_moves_form_key += 1
                     
-                    if insert_move(new_move):
-                        st.session_state.data = fetch_all_data()
-                        st.session_state.schedule_form_key += 1
-                        
-                        st.toast("🎉 OS agendada!", icon="✅")
-                        st.success(f"""
-                        ✅ **Mudança agendada com sucesso!**
-                        
-                        👤 Cliente: {res_name}
-                        📅 Data: {m_date.strftime('%d/%m/%Y')}
-                        🕐 Hora: {m_time.strftime('%H:%M')}
-                        📦 Volume: {metragem} m³
-                        """)
-                        
-                        time.sleep(1.5)
-                        st.rerun()
-                    else:
-                        st.error("❌ Erro ao agendar mudança.")
+                    st.toast("🎉 OS criada com sucesso!", icon="✅")
+                    st.success(f"""
+                    ✅ **Ordem de Serviço criada com sucesso!**
+                    
+                    👤 Cliente: {res_name}
+                    📅 Data: {m_date.strftime('%d/%m/%Y')}
+                    🕐 Hora: {m_time.strftime('%H:%M')}
+                    📦 Volume: {metragem} m³
+                    📊 Status: A realizar
+                    """)
+                    
+                    time.sleep(1.5)
+                    st.rerun()
+                else:
+                    st.error("❌ Erro ao criar OS. Tente novamente.")
     
     with tab3:
-        # ============================================
-        # TAB 3: MUDANÇAS AGENDADAS
-        # ============================================
-        st.subheader("📅 Próximas Mudanças")
+        # LISTA DE MUDANÇAS AGENDADAS - INTERFACE INTUITIVA
+        st.subheader("📅 Agenda de Mudanças")
         
         moves = filter_by_scope(st.session_state.data['moves'])
         
         if not moves:
-            st.info("💡 Nenhuma mudança agendada")
-        else:
-            # Filtros
-            col_per1, col_per2 = st.columns(2)
-            
-            with col_per1:
-                periodo = st.selectbox(
-                    "Período",
-                    ["Próximos 7 dias", "Próximos 30 dias", "Todas"]
-                )
-            
-            with col_per2:
-                status_filter = st.selectbox(
-                    "Status",
-                    ["Todos", "A realizar", "Realizando", "Concluído"],
-                    key="status_tab3"
-                )
-            
-            # Filtrar
-            from datetime import datetime, timedelta
-            hoje = datetime.now().date()
-            
-            if periodo == "Próximos 7 dias":
-                limite = hoje + timedelta(days=7)
-                moves_filtered = [m for m in moves 
-                                if m.get('date') and 
-                                hoje <= datetime.strptime(str(m['date']), '%Y-%m-%d').date() <= limite]
-            elif periodo == "Próximos 30 dias":
-                limite = hoje + timedelta(days=30)
-                moves_filtered = [m for m in moves 
-                                if m.get('date') and 
-                                hoje <= datetime.strptime(str(m['date']), '%Y-%m-%d').date() <= limite]
-            else:
-                moves_filtered = moves
-            
-            if status_filter != "Todos":
-                moves_filtered = [m for m in moves_filtered if m.get('status') == status_filter]
-            
-            # Ordenar
-            moves_filtered = sorted(moves_filtered, key=lambda x: x.get('date', ''))
-            
-            st.caption(f"📊 {len(moves_filtered)} mudança(s)")
-            st.divider()
-            
-            if not moves_filtered:
-                st.info("Nenhuma mudança no período selecionado")
-            else:
-                # Agrupar por data
-                moves_by_date = {}
-                for move in moves_filtered:
-                    date = move.get('date', 'Sem data')
-                    if date not in moves_by_date:
-                        moves_by_date[date] = []
-                    moves_by_date[date].append(move)
+            st.info("💡 Nenhuma mudança agendada.")
+            return
+        
+        # Filtros compactos
+        col_f1, col_f2, col_f3, col_f4 = st.columns([2, 2, 2, 1])
+        
+        with col_f1:
+            filter_status_agenda = st.selectbox(
+                "📊 Status",
+                ["Todos", "A realizar", "Realizando", "Concluído"],
+                key="filter_agenda_status"
+            )
+        
+        with col_f2:
+            filter_date_from = st.date_input(
+                "📅 De",
+                value=None,
+                key="filter_date_from"
+            )
+        
+        with col_f3:
+            filter_date_to = st.date_input(
+                "📅 Até",
+                value=None,
+                key="filter_date_to"
+            )
+        
+        with col_f4:
+            st.write("")
+            st.write("")
+            if st.button("🔄", help="Limpar filtros", use_container_width=True):
+                st.session_state.filter_agenda_status = "Todos"
+                st.rerun()
+        
+        # Aplicar filtros
+        filtered = moves
+        
+        if filter_status_agenda != "Todos":
+            filtered = [m for m in filtered if m.get('status') == filter_status_agenda]
+        
+        if filter_date_from:
+            filtered = [m for m in filtered if m.get('date') and str(m['date']) >= str(filter_date_from)]
+        
+        if filter_date_to:
+            filtered = [m for m in filtered if m.get('date') and str(m['date']) <= str(filter_date_to)]
+        
+        # Ordenar por data
+        filtered = sorted(filtered, key=lambda x: x.get('date', ''), reverse=False)
+        
+        st.caption(f"📊 {len(filtered)} mudança(s) agendada(s)")
+        st.divider()
+        
+        # Agrupar por data
+        moves_by_date = {}
+        for move in filtered:
+            date_str = move.get('date', 'Sem data')
+            if date_str not in moves_by_date:
+                moves_by_date[date_str] = []
+            moves_by_date[date_str].append(move)
+        
+        # Mostrar por data
+        for date_str, moves_list in moves_by_date.items():
+            # Formatar data
+            try:
+                date_obj = datetime.strptime(str(date_str), '%Y-%m-%d')
+                formatted_date = date_obj.strftime('%d/%m/%Y - %A')
                 
-                # Mostrar
-                for date, day_moves in moves_by_date.items():
-                    try:
-                        date_obj = datetime.strptime(str(date), '%Y-%m-%d')
-                        date_formatted = date_obj.strftime('%d/%m/%Y - %A')
-                        
-                        if date_obj.date() == hoje:
-                            date_label = f"🔴 HOJE - {date_formatted}"
-                        elif date_obj.date() == hoje + timedelta(days=1):
-                            date_label = f"🟡 AMANHÃ - {date_formatted}"
-                        else:
-                            date_label = date_formatted
-                    except:
-                        date_label = str(date)
+                # Verificar se é hoje, amanhã ou atrasada
+                today = datetime.now().date()
+                days_diff = (date_obj.date() - today).days
+                
+                if days_diff == 0:
+                    formatted_date += " 🔥 **HOJE**"
+                    date_color = "#FF5722"
+                elif days_diff == 1:
+                    formatted_date += " ⭐ **AMANHÃ**"
+                    date_color = "#FF9800"
+                elif days_diff < 0:
+                    formatted_date += f" ⚠️ **ATRASADA** ({abs(days_diff)} dia{'s' if abs(days_diff) > 1 else ''})"
+                    date_color = "#F44336"
+                else:
+                    date_color = "#2196F3"
+            except:
+                formatted_date = str(date_str)
+                date_color = "#999"
+            
+            # Cabeçalho da data
+            st.markdown(f"### 📅 {formatted_date}")
+            st.caption(f"{len(moves_list)} mudança(s)")
+            
+            # Listar mudanças deste dia
+            for move in moves_list:
+                residents = st.session_state.data['residents']
+                resident = next((r for r in residents if r.get('id') == move.get('residentId')), None)
+                
+                if not resident:
+                    continue
+                
+                # Card visual da mudança
+                with st.container():
+                    # Definir cor de fundo baseado no status
+                    status = move.get('status', 'A realizar')
+                    if status == 'Concluído':
+                        bg_color = "#E8F5E9"
+                        border_color = "#4CAF50"
+                        emoji = "🟢"
+                    elif status == 'Realizando':
+                        bg_color = "#E3F2FD"
+                        border_color = "#2196F3"
+                        emoji = "🔵"
+                    else:
+                        bg_color = "#FFF9C4"
+                        border_color = "#FFC107"
+                        emoji = "🟡"
                     
-                    with st.expander(f"📅 {date_label} ({len(day_moves)} mudança(s))", expanded=False):
-                        for move in day_moves:
-                            residents = st.session_state.data['residents']
-                            resident = next((r for r in residents 
-                                           if r['id'] == move.get('residentId') 
-                                           or r['id'] == move.get('residentid')), None)
+                    # HTML Card customizado
+                    st.markdown(f"""
+                    <div style="background-color: {bg_color}; 
+                                border-left: 5px solid {border_color}; 
+                                padding: 15px; 
+                                border-radius: 5px; 
+                                margin-bottom: 10px;">
+                        <h4 style="margin: 0; color: #333;">{emoji} {resident.get('name', 'N/A')}</h4>
+                        <p style="margin: 5px 0; color: #666;">
+                            🕐 {move.get('time', 'N/A')} • 
+                            📦 {move.get('metragem', 0)} m³ • 
+                            📋 OS #{move.get('id', '?')}
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Ações rápidas em colunas
+                    col_act1, col_act2, col_act3, col_act4 = st.columns([2, 2, 2, 1])
+                    
+                    with col_act1:
+                        # Alterar status rapidamente
+                        status_options = ["A realizar", "Realizando", "Concluído"]
+                        current_index = status_options.index(status) if status in status_options else 0
+                        
+                        new_status = st.selectbox(
+                            "Status",
+                            status_options,
+                            index=current_index,
+                            key=f"status_quick_{move['id']}",
+                            label_visibility="collapsed"
+                        )
+                        
+                        if new_status != status:
+                            if st.button("✅ Atualizar", key=f"update_status_{move['id']}", use_container_width=True):
+                                updated = {'status': new_status}
+                                if new_status == "Concluído":
+                                    updated['completionDate'] = str(datetime.now().date())
+                                    updated['completionTime'] = str(datetime.now().time().strftime('%H:%M'))
+                                
+                                if update_move_details(move['id'], updated):
+                                    st.session_state.data = fetch_all_data()
+                                    st.toast(f"✅ Status: {new_status}")
+                                    time.sleep(0.3)
+                                    st.rerun()
+                    
+                    with col_act2:
+                        if resident.get('contact'):
+                            st.write(f"📞 {resident['contact']}")
+                        else:
+                            st.write("📞 Sem contato")
+                    
+                    with col_act3:
+                        # Mostrar equipe resumida
+                        team_parts = []
+                        if move.get('supervisorId'):
+                            sup = get_name_by_id(st.session_state.data['staff'], move['supervisorId'])
+                            if sup != "N/A":
+                                team_parts.append(f"👷 {sup.split()[0]}")
+                        if move.get('driverId'):
+                            drv = get_name_by_id(st.session_state.data['staff'], move['driverId'])
+                            if drv != "N/A":
+                                team_parts.append(f"🚛 {drv.split()[0]}")
+                        
+                        if team_parts:
+                            st.caption(" • ".join(team_parts))
+                        else:
+                            st.caption("⚠️ Sem equipe")
+                    
+                    with col_act4:
+                        # Botão de expandir detalhes
+                        if st.button("📋", key=f"details_{move['id']}", help="Ver detalhes completos"):
+                            st.session_state[f"show_full_{move['id']}"] = not st.session_state.get(f"show_full_{move['id']}", False)
+                            st.rerun()
+                    
+                    # Detalhes completos (expandível)
+                    if st.session_state.get(f"show_full_{move['id']}", False):
+                        st.markdown("---")
+                        
+                        col_det1, col_det2 = st.columns(2)
+                        
+                        with col_det1:
+                            st.markdown("**📍 Endereços:**")
+                            st.write(f"**Origem:** {resident.get('originAddress', 'N/A')}, {resident.get('originNumber', '')}")
+                            st.caption(f"Bairro: {resident.get('originNeighborhood', 'N/A')}")
+                            st.write(f"**Destino:** {resident.get('destAddress', 'N/A')}, {resident.get('destNumber', '')}")
+                            st.caption(f"Bairro: {resident.get('destNeighborhood', 'N/A')}")
+                        
+                        with col_det2:
+                            st.markdown("**👥 Equipe Completa:**")
                             
-                            if resident:
-                                status_emoji = {
-                                    'A realizar': '🟡',
-                                    'Realizando': '🔵',
-                                    'Concluído': '🟢'
-                                }
-                                emoji = status_emoji.get(move.get('status'), '⚪')
-                                
-                                col1, col2, col3 = st.columns([2, 2, 1])
-                                
-                                with col1:
-                                    st.write(f"**{emoji} {resident.get('name', 'N/A')}**")
-                                    st.caption(f"OS #{move.get('id')} • {move.get('time', 'N/A')}")
-                                
-                                with col2:
-                                    st.write(f"📍 {resident.get('originNeighborhood', 'N/A')} → {resident.get('destNeighborhood', 'N/A')}")
-                                    st.caption(f"📦 {move.get('metragem', 0)} m³")
-                                
-                                with col3:
-                                    st.write(f"**{move.get('status', 'N/A')}**")
-                                    
-                                    staff_data = st.session_state.data.get('staff', [])
-                                    team = []
-                                    if move.get('supervisorId'):
-                                        sup = next((s for s in staff_data if s['id'] == move['supervisorId']), None)
-                                        if sup:
-                                            team.append(f"👷 {sup['name'].split()[0]}")
-                                    if move.get('driverId'):
-                                        drv = next((s for s in staff_data if s['id'] == move['driverId']), None)
-                                        if drv:
-                                            team.append(f"🚛 {drv['name'].split()[0]}")
-                                    
-                                    if team:
-                                        st.caption(" • ".join(team))
-                                    else:
-                                        st.caption("⚠️ Sem equipe")
-                                
-                                st.divider()
+                            sup_id = move.get('supervisorId')
+                            if sup_id:
+                                st.write(f"🔧 **Supervisor:** {get_name_by_id(st.session_state.data['staff'], sup_id)}")
+                            
+                            coord_id = move.get('coordinatorId')
+                            if coord_id:
+                                st.write(f"📋 **Coordenador:** {get_name_by_id(st.session_state.data['staff'], coord_id)}")
+                            
+                            drv_id = move.get('driverId')
+                            if drv_id:
+                                st.write(f"🚛 **Motorista:** {get_name_by_id(st.session_state.data['staff'], drv_id)}")
+                            
+                            if not any([sup_id, coord_id, drv_id]):
+                                st.warning("⚠️ Nenhuma equipe atribuída")
+                        
+                        if resident.get('observation'):
+                            st.markdown("**📝 Observações:**")
+                            st.info(resident['observation'])
+                    
+                    st.divider()
 
+# --- FORMULÁRIOS ---
+
+def residents_form():
+    st.title("🏠 Gestão de Moradores")
+    
+    # Tabs: Cadastrar novo OU Ver/Editar existentes
+    tab1, tab2 = st.tabs(["➕ Cadastrar Novo", "📋 Ver e Editar"])
+    
+    with tab1:
+        # CADASTRAR NOVO MORADOR
+        st.subheader("➕ Novo Morador")
+        
+        # Inicializar contador de cadastros
+        if 'resident_form_key' not in st.session_state:
+            st.session_state.resident_form_key = 0
+        
+        with st.form(f"new_resident_{st.session_state.resident_form_key}"):
+            st.markdown("#### 📝 Dados do Cliente")
+            name = st.text_input("Nome Completo *", placeholder="Digite o nome completo...")
+            c1, c2 = st.columns(2)
+            selo = c1.text_input("Selo / ID", placeholder="Ex: A123")
+            contact = c2.text_input("Telefone / Contato", placeholder="(00) 00000-0000")
+            
+            st.markdown("#### 📍 Origem")
+            c3, c4 = st.columns([3, 1])
+            orig_addr = c3.text_input("Endereço (Origem)", placeholder="Rua, Avenida...")
+            orig_num = c4.text_input("Nº (Origem)", placeholder="123")
+            orig_bairro = st.text_input("Bairro (Origem)", placeholder="Nome do bairro")
+            
+            st.markdown("#### 🎯 Destino")
+            c5, c6 = st.columns([3, 1])
+            dest_addr = c5.text_input("Endereço (Destino)", placeholder="Rua, Avenida...")
+            dest_num = c6.text_input("Nº (Destino)", placeholder="456")
+            dest_bairro = st.text_input("Bairro (Destino)", placeholder="Nome do bairro")
+            
+            obs = st.text_area("Observações", placeholder="Informações adicionais...")
+            
+            st.markdown("#### 📅 Previsão")
+            c7, c8 = st.columns(2)
+            move_date = c7.date_input("Data da Mudança")
+            move_time = c8.time_input("Hora")
+            
+            user = st.session_state.user
+            sec_id = get_current_scope_id()
+            
+            if user['role'] == 'ADMIN':
+                secretaries = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
+                sec_options = {}
+                for s in secretaries:
+                    key = s.get('branchName') or s['name']
+                    sec_options[key] = s['id']
+                if sec_options:
+                    selected_sec_name = st.selectbox("Vincular à Secretária", list(sec_options.keys()))
+                    if selected_sec_name: 
+                        sec_id = sec_options[selected_sec_name]
+
+            submit = st.form_submit_button("✅ Salvar Morador", type="primary", use_container_width=True)
+            
+            if submit:
+                if not name:
+                    st.error("⚠️ Nome é obrigatório.")
+                else:
+                    # Garantir secretaryId válido
+                    if sec_id is None:
+                        sec_id = ensure_secretary_id()
+                    
+                    new_res = {
+                        'name': name, 'selo': selo, 'contact': contact,
+                        'originAddress': orig_addr, 'originNumber': orig_num, 'originNeighborhood': orig_bairro,
+                        'destAddress': dest_addr, 'destNumber': dest_num, 'destNeighborhood': dest_bairro,
+                        'observation': obs, 'moveDate': str(move_date), 'moveTime': str(move_time),
+                        'secretaryId': sec_id
+                    }
+                    if insert_resident(new_res):
+                        # Recarregar dados para pegar o ID do morador recém-criado
+                        st.session_state.data = fetch_all_data()
+                        
+                        # Buscar o morador recém-criado (último inserido)
+                        all_residents = st.session_state.data['residents']
+                        new_resident = max(all_residents, key=lambda x: x.get('id', 0))
+                        
+                        # CRIAR OS AUTOMATICAMENTE
+                        auto_os = {
+                            'residentId': new_resident['id'],
+                            'date': str(move_date),
+                            'time': str(move_time),
+                            'metragem': 0.0,
+                            'supervisorId': None,
+                            'coordinatorId': None,
+                            'driverId': None,
+                            'status': 'A realizar',
+                            'secretaryId': sec_id
+                        }
+                        
+                        # Inserir OS
+                        os_criada = insert_move(auto_os)
+                        
+                        # Recarregar novamente para pegar a OS
+                        st.session_state.data = fetch_all_data()
+                        st.session_state.resident_form_key += 1
+                        
+                        if os_criada:
+                            st.toast("🎉 Morador + OS criados!", icon="✅")
+                            st.success(f"""
+                            ✅ **{name}** cadastrado(a) com sucesso!
+                            
+                            📍 Origem: {orig_addr or 'N/A'}
+                            🎯 Destino: {dest_addr or 'N/A'}
+                            
+                            📦 **OS criada automaticamente!**
+                            📅 Data: {move_date.strftime('%d/%m/%Y')}
+                            🕐 Hora: {move_time.strftime('%H:%M')}
+                            """)
+                        else:
+                            st.toast("🎉 Morador cadastrado!", icon="✅")
+                            st.warning(f"✅ **{name}** cadastrado(a)!\n\n⚠️ Erro ao criar OS automaticamente.\n💡 Crie a OS manualmente em 'Agendamento'.")
+                        
+                        time.sleep(1.5)
+                        st.rerun()
+                    else:
+                        st.error("❌ Erro ao cadastrar morador.")
+    
+    with tab2:
+        # VER E EDITAR MORADORES EXISTENTES
+        st.subheader("📋 Moradores Cadastrados")
+        
+        residents = filter_by_scope(st.session_state.data['residents'])
+        
+        if not residents:
+            st.info("💡 Nenhum morador cadastrado ainda.")
+            return
+        
+        # Filtro de busca
+        search_resident = st.text_input("🔍 Buscar morador", placeholder="Digite o nome...")
+        
+        # Filtrar
+        if search_resident:
+            residents = [r for r in residents if search_resident.lower() in r.get('name', '').lower()]
+        
+        st.caption(f"📊 Mostrando {len(residents)} morador(es)")
+        st.divider()
+        
+        # Listar moradores
+        for resident in residents:
+            with st.container():
+                col_header1, col_header2 = st.columns([3, 1])
+                
+                with col_header1:
+                    st.markdown(f"### 👤 {resident.get('name', 'Sem nome')}")
+                    if resident.get('contact'):
+                        st.caption(f"📞 {resident['contact']}")
+                
+                with col_header2:
+                    if resident.get('selo'):
+                        st.markdown(f"**ID:** {resident['selo']}")
+                
+                with st.expander("📋 Ver Detalhes e Editar", expanded=False):
+                    # Detalhes atuais
+                    col_det1, col_det2 = st.columns(2)
+                    
+                    with col_det1:
+                        st.markdown("**📍 Endereços**")
+                        st.write(f"**Origem:**")
+                        st.write(f"  {resident.get('originAddress', 'N/A')}, {resident.get('originNumber', '')}")
+                        st.write(f"  {resident.get('originNeighborhood', 'N/A')}")
+                        st.write(f"**Destino:**")
+                        st.write(f"  {resident.get('destAddress', 'N/A')}, {resident.get('destNumber', '')}")
+                        st.write(f"  {resident.get('destNeighborhood', 'N/A')}")
+                    
+                    with col_det2:
+                        st.markdown("**📅 Previsão de Mudança**")
+                        if resident.get('moveDate'):
+                            try:
+                                move_dt = datetime.strptime(str(resident['moveDate']), '%Y-%m-%d')
+                                st.write(f"📅 {move_dt.strftime('%d/%m/%Y')}")
+                            except:
+                                st.write(f"📅 {resident.get('moveDate', 'N/A')}")
+                        
+                        if resident.get('moveTime'):
+                            st.write(f"🕐 {resident['moveTime']}")
+                        
+                        if resident.get('observation'):
+                            st.markdown("**📝 Observações:**")
+                            st.info(resident['observation'])
+                    
+                    st.divider()
+                    
+                    # AÇÕES: Editar e Excluir
+                    st.markdown("### ⚙️ Ações")
+                    
+                    col_act1, col_act2 = st.columns([3, 1])
+                    
+                    with col_act1:
+                        # Formulário de edição rápida
+                        with st.form(f"edit_resident_{resident['id']}"):
+                            st.markdown("**✏️ Editar Informações**")
+                            
+                            col_e1, col_e2 = st.columns(2)
+                            
+                            new_name = col_e1.text_input("Nome", value=resident.get('name', ''))
+                            new_contact = col_e2.text_input("Telefone", value=resident.get('contact', ''))
+                            
+                            new_obs = st.text_area("Observações", value=resident.get('observation', ''))
+                            
+                            if st.form_submit_button("✅ Salvar Alterações", use_container_width=True):
+                                # Atualizar no banco (precisa criar função update_resident)
+                                updated_data = {
+                                    'name': new_name,
+                                    'contact': new_contact,
+                                    'observation': new_obs
+                                }
+                                
+                                # Por enquanto, usar connection para update
+                                try:
+                                    conn = get_connection()
+                                    if conn:
+                                        cur = conn.cursor()
+                                        cur.execute("""
+                                            UPDATE residents 
+                                            SET name = %s, contact = %s, observation = %s
+                                            WHERE id = %s
+                                        """, (new_name, new_contact, new_obs, resident['id']))
+                                        conn.commit()
+                                        cur.close()
+                                        conn.close()
+                                        
+                                        st.session_state.data = fetch_all_data()
+                                        st.toast(f"✅ {new_name} atualizado!")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Erro ao atualizar: {str(e)}")
+                    
+                    with col_act2:
+                        st.markdown("**🗑️ Excluir**")
+                        st.caption("⚠️ Ação irreversível!")
+                        
+                        # Verificar se tem OSs vinculadas ANTES do botão (ambos formatos)
+                        moves_vinculadas = [m for m in st.session_state.data['moves'] 
+                                          if m.get('residentId') == resident['id'] 
+                                          or m.get('residentid') == resident['id']]
+                        
+                        if moves_vinculadas:
+                            # TEM OSs - mostrar bloqueio
+                            st.error(f"❌ Não pode excluir")
+                            st.caption(f"{len(moves_vinculadas)} OS(s) vinculada(s)")
+                            
+                            # Botão desabilitado
+                            st.button("🗑️ Excluir Morador", 
+                                     key=f"delete_{resident['id']}", 
+                                     type="secondary", 
+                                     use_container_width=True,
+                                     disabled=True,
+                                     help="Exclua as OSs vinculadas primeiro")
+                            
+                            # Mostrar as OSs vinculadas
+                            with st.expander("📋 Ver OSs vinculadas"):
+                                for move in moves_vinculadas:
+                                    try:
+                                        move_date = datetime.strptime(str(move.get('date')), '%Y-%m-%d')
+                                        date_str = move_date.strftime('%d/%m/%Y')
+                                    except:
+                                        date_str = str(move.get('date', 'N/A'))
+                                    
+                                    st.write(f"• OS #{move.get('id')} - {date_str} - Status: {move.get('status', 'N/A')}")
+                        else:
+                            # NÃO TEM OSs - pode excluir
+                            if st.button("🗑️ Excluir Morador", 
+                                        key=f"delete_{resident['id']}", 
+                                        type="secondary", 
+                                        use_container_width=True):
+                                st.session_state[f"confirm_delete_{resident['id']}"] = True
+                                st.rerun()
+                        
+                        # Confirmação (só aparece se não tem OSs vinculadas)
+                        if st.session_state.get(f"confirm_delete_{resident['id']}", False):
+                            st.warning("⚠️ Tem certeza?")
+                            col_conf1, col_conf2 = st.columns(2)
+                            
+                            with col_conf1:
+                                if st.button("✅ Sim", key=f"yes_res_{resident['id']}", use_container_width=True):
+                                    try:
+                                        conn = get_connection()
+                                        if conn:
+                                            cur = conn.cursor()
+                                            cur.execute("DELETE FROM residents WHERE id = %s", (resident['id'],))
+                                            conn.commit()
+                                            cur.close()
+                                            conn.close()
+                                            
+                                            # Limpar confirmação antes de rerun
+                                            if f"confirm_delete_{resident['id']}" in st.session_state:
+                                                del st.session_state[f"confirm_delete_{resident['id']}"]
+                                            
+                                            st.session_state.data = fetch_all_data()
+                                            st.toast(f"🗑️ {resident.get('name', 'Morador')} excluído!")
+                                            time.sleep(0.5)
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Erro de conexão")
+                                    except Exception as e:
+                                        st.error(f"❌ Erro ao excluir: {str(e)}")
+                            
+                            with col_conf2:
+                                if st.button("❌ Não", key=f"no_res_{resident['id']}", use_container_width=True):
+                                    if f"confirm_delete_{resident['id']}" in st.session_state:
+                                        del st.session_state[f"confirm_delete_{resident['id']}"]
+                                    st.rerun()
+                
+                st.markdown("---")
+
+def schedule_form():
+    st.title("🗓️ Agendamento de OS")
+    
+    scoped_residents = filter_by_scope(st.session_state.data['residents'])
+    scoped_staff = filter_by_scope(st.session_state.data['staff'], key='id')
+    
+    if not scoped_residents:
+        st.warning("⚠️ Nenhum morador cadastrado nesta base.")
+        st.info("💡 Cadastre um morador primeiro na aba **🏠 Moradores**")
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("➕ Ir para Cadastro", type="primary", use_container_width=True):
+                st.info("👆 Clique na aba '🏠 Moradores' no menu acima")
+        return
+    
+    # Inicializar contador de formulários
+    if 'schedule_form_key' not in st.session_state:
+        st.session_state.schedule_form_key = 0
+
+    with st.form(f"new_move_{st.session_state.schedule_form_key}"):
+        st.subheader("📋 Informações da Mudança")
+        
+        res_map = {r['name']: r['id'] for r in scoped_residents}
+        res_name = st.selectbox("👤 Morador *", list(res_map.keys()), 
+                                help="Selecione o morador desta mudança")
+        
+        st.divider()
+        
+        c1, c2 = st.columns(2)
+        m_date = c1.date_input("📅 Data da Mudança *", help="Data prevista para a mudança")
+        m_time = c2.time_input("🕐 Hora *", help="Horário previsto")
+        
+        metragem = st.number_input("📦 Volume (m³)", 
+                                   min_value=0.0, 
+                                   step=0.5, 
+                                   value=0.0,
+                                   help="Volume estimado da mudança")
+        
+        st.divider()
+        st.subheader("👥 Equipe (Opcional)")
+        
+        supervisors = [s for s in scoped_staff if s['role'] in ['SUPERVISOR', 'ADMIN']]
+        coordinators = [s for s in scoped_staff if s['role'] in ['COORDINATOR', 'ADMIN']]
+        drivers = [s for s in scoped_staff if s['role'] in ['DRIVER']]
+        
+        sup_id = None
+        coord_id = None
+        drv_id = None
+        
+        if supervisors:
+            sup_options = ["Nenhum"] + [s['name'] for s in supervisors]
+            sup_name = st.selectbox("🔧 Supervisor", sup_options)
+            if sup_name != "Nenhum":
+                sup_id = next((s['id'] for s in supervisors if s['name'] == sup_name), None)
+        else:
+            st.info("💡 Nenhum supervisor cadastrado")
+        
+        if coordinators:
+            coord_options = ["Nenhum"] + [s['name'] for s in coordinators]
+            coord_name = st.selectbox("📋 Coordenador", coord_options)
+            if coord_name != "Nenhum":
+                coord_id = next((s['id'] for s in coordinators if s['name'] == coord_name), None)
+        else:
+            st.info("💡 Nenhum coordenador cadastrado")
+        
+        if drivers:
+            drv_options = ["Nenhum"] + [s['name'] for s in drivers]
+            drv_name = st.selectbox("🚛 Motorista", drv_options)
+            if drv_name != "Nenhum":
+                drv_id = next((s['id'] for s in drivers if s['name'] == drv_name), None)
+        else:
+            st.info("💡 Nenhum motorista cadastrado")
+        
+        st.divider()
+        submit = st.form_submit_button("✅ Agendar Mudança", 
+                                       type="primary", 
+                                       use_container_width=True)
+        
+        if submit:
+            new_move = {
+                'residentId': res_map[res_name],
+                'date': str(m_date),
+                'time': str(m_time),
+                'metragem': metragem,
+                'supervisorId': sup_id,
+                'coordinatorId': coord_id,
+                'driverId': drv_id,
+                'status': 'A realizar',
+                'secretaryId': ensure_secretary_id()
+            }
+            
+            if insert_move(new_move):
+                st.session_state.data = fetch_all_data()
+                st.session_state.schedule_form_key += 1
+                
+                st.toast("🎉 OS agendada com sucesso!", icon="✅")
+                st.success(f"""
+                ✅ **Mudança agendada com sucesso!**
+                
+                👤 Cliente: {res_name}
+                📅 Data: {m_date.strftime('%d/%m/%Y')}
+                🕐 Hora: {m_time.strftime('%H:%M')}
+                📦 Volume: {metragem} m³
+                """)
+                
+                time.sleep(1.5)
+                st.rerun()
+            else:
+                st.error("❌ Erro ao agendar mudança. Tente novamente.")
 
 def staff_management():
     st.title("👥 Recursos Humanos")
