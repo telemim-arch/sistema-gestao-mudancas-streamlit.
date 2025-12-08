@@ -196,19 +196,18 @@ def fetch_all_data():
             df_roles = pd.DataFrame(roles_data, columns=columns)
             data['roles'] = df_roles.to_dict('records')
             
-            # 6. Notifications
-            cur.execute("SELECT * FROM notifications ORDER BY \"createdAt\" DESC LIMIT 100")
-            columns = [desc[0] for desc in cur.description]
-            notif_data = cur.fetchall()
-            df_notif = pd.DataFrame(notif_data, columns=columns)
-            data['notifications'] = df_notif.to_dict('records')
+            # 6. Notifications - TABELA NÃO EXISTE, retornar vazio
+            data['notifications'] = []
             
-            # 7. Attachments
-            cur.execute("SELECT * FROM attachments")
-            columns = [desc[0] for desc in cur.description]
-            att_data = cur.fetchall()
-            df_att = pd.DataFrame(att_data, columns=columns)
-            data['attachments'] = df_att.to_dict('records')
+            # 7. Attachments - tentar buscar, se não existir retornar vazio
+            try:
+                cur.execute("SELECT * FROM attachments")
+                columns = [desc[0] for desc in cur.description]
+                att_data = cur.fetchall()
+                df_att = pd.DataFrame(att_data, columns=columns)
+                data['attachments'] = df_att.to_dict('records')
+            except:
+                data['attachments'] = []
             
             cur.close()
             return data
@@ -392,26 +391,25 @@ def delete_secretary(secretary_id):
 
 # --- FUNÇÕES DE NOTIFICAÇÕES ---
 
+def insert_notification(notification_data):
+    """Insere notificação (DUMMY - tabela não existe)"""
+    # Tabela notifications não existe, apenas retornar True
+    return True
+
 def get_user_notifications(userId, unread_only=False):
-    """Busca notificações do usuário"""
-    if unread_only:
-        query = 'SELECT * FROM notifications WHERE "userId" = %s AND "isRead" = FALSE ORDER BY "createdAt" DESC'
-    else:
-        query = 'SELECT * FROM notifications WHERE "userId" = %s ORDER BY "createdAt" DESC LIMIT 50'
-    
-    df = execute_query(query, (userId,), fetch_data=True)
-    return df.to_dict('records') if df is not None else []
+    """Busca notificações do usuário (DUMMY - tabela não existe)"""
+    # Tabela notifications não existe, retornar lista vazia
+    return []
 
 def mark_notification_read(notification_id):
-    """Marca notificação como lida"""
-    query = 'UPDATE notifications SET "isRead" = TRUE WHERE id = %s'
-    return execute_query(query, (notification_id,))
+    """Marca notificação como lida (DUMMY - tabela não existe)"""
+    # Tabela notifications não existe, apenas retornar True
+    return True
 
 def get_unread_count(userId):
-    """Conta notificações não lidas"""
-    query = 'SELECT COUNT(*) as count FROM notifications WHERE "userId" = %s AND "isRead" = FALSE'
-    df = execute_query(query, (userId,), fetch_data=True)
-    return df['count'].iloc[0] if df is not None and not df.empty else 0
+    """Conta notificações não lidas (DUMMY - tabela não existe)"""
+    # Tabela notifications não existe, retornar 0
+    return 0
 
 # --- FUNÇÕES DE ANEXOS ---
 
@@ -437,10 +435,104 @@ def get_attachments_by_move(move_id):
     df = execute_query(query, (move_id,), fetch_data=True)
     return df.to_dict('records') if df is not None else []
 
+def get_attachments(move_id):
+    """Alias para get_attachments_by_move"""
+    return get_attachments_by_move(move_id)
+
+def get_attachment_data(attachment_id):
+    """Busca dados de um anexo específico"""
+    query = 'SELECT * FROM attachments WHERE id = %s'
+    df = execute_query(query, (attachment_id,), fetch_data=True)
+    return df.to_dict('records')[0] if df is not None and not df.empty else None
+
 def delete_attachment(attachment_id):
     """Deleta anexo"""
     query = "DELETE FROM attachments WHERE id = %s"
     return execute_query(query, (attachment_id,))
+
+# --- FUNÇÕES DE RELATÓRIOS ---
+
+def get_report_data():
+    """Retorna dados para relatórios"""
+    try:
+        with get_db_connection() as conn:
+            if conn is None:
+                return None
+            
+            cur = conn.cursor()
+            
+            # Dados de OSs por status
+            cur.execute("""
+                SELECT 
+                    status,
+                    COUNT(*) as total
+                FROM moves
+                GROUP BY status
+            """)
+            status_data = cur.fetchall()
+            
+            # Dados de OSs por mês
+            cur.execute("""
+                SELECT 
+                    TO_CHAR(date, 'YYYY-MM') as mes,
+                    COUNT(*) as total
+                FROM moves
+                WHERE date >= NOW() - INTERVAL '6 months'
+                GROUP BY mes
+                ORDER BY mes
+            """)
+            monthly_data = cur.fetchall()
+            
+            cur.close()
+            
+            return {
+                'status': status_data,
+                'monthly': monthly_data
+            }
+    except Exception as e:
+        st.error(f"Erro ao buscar dados de relatório: {e}")
+        return None
+
+# --- FUNÇÕES DE INICIALIZAÇÃO ---
+
+def init_db_structure(conn):
+    """
+    Cria as tabelas necessárias no banco de dados.
+    Versão simplificada - apenas estrutura básica.
+    """
+    if conn is None:
+        return
+    
+    try:
+        cur = conn.cursor()
+        
+        # Tabela staff já existe, não precisa criar
+        # Tabela residents já existe, não precisa criar
+        # Tabela moves já existe, não precisa criar
+        # Tabela secretaries já existe, não precisa criar
+        # Tabela roles já existe, não precisa criar
+        
+        # Tabela attachments (criar se não existir)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS attachments (
+                id SERIAL PRIMARY KEY,
+                "moveId" INTEGER REFERENCES moves(id) ON DELETE CASCADE,
+                "fileName" TEXT NOT NULL,
+                "fileData" BYTEA,
+                "uploadedBy" INTEGER REFERENCES staff(id),
+                "uploadedAt" TIMESTAMP DEFAULT NOW()
+            );
+        """)
+        
+        conn.commit()
+        cur.close()
+        
+    except Exception as e:
+        st.error(f"Erro ao inicializar estrutura: {e}")
+        try:
+            conn.rollback()
+        except:
+            pass
 
 # --- FUNÇÕES HELPER ---
 
