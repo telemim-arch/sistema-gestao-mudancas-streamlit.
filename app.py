@@ -408,10 +408,84 @@ def render_monthly_calendar(year, month, moves):
                         else:
                             emoji = "🟡"
                         
-                        st.markdown(f"### {emoji} {day}")
-                        st.caption(f"{len(day_moves)} OS")
+                        # Botão clicável no dia
+                        if st.button(f"{emoji} **{day}**", 
+                                   key=f"day_{day}_{month}_{year}",
+                                   use_container_width=True,
+                                   help=f"{len(day_moves)} mudança(s) - Clique para detalhes"):
+                            st.session_state['selected_day'] = day
+                            st.session_state['selected_month'] = month
+                            st.session_state['selected_year'] = year
+                            st.session_state['selected_moves'] = day_moves
+                            st.rerun()
+                        
+                        st.caption(f"{len(day_moves)} OS", unsafe_allow_html=False)
                     else:
                         st.markdown(f"### {day}")
+    
+    # Mostrar detalhes do dia selecionado
+    if (st.session_state.get('selected_day') and 
+        st.session_state.get('selected_month') == month and
+        st.session_state.get('selected_year') == year and
+        st.session_state.get('selected_moves')):
+        
+        st.markdown("---")
+        st.subheader(f"📋 Mudanças do dia {st.session_state['selected_day']}/{month}/{year}")
+        
+        if st.button("❌ Fechar Detalhes"):
+            del st.session_state['selected_day']
+            del st.session_state['selected_moves']
+            st.rerun()
+        
+        for move in st.session_state['selected_moves']:
+            # Buscar resident (ambos formatos)
+            resident = next((r for r in st.session_state.data['residents'] 
+                           if r['id'] == move.get('residentId') 
+                           or r['id'] == move.get('residentid')), None)
+            
+            if resident:
+                status_color = {
+                    'A realizar': '🟡',
+                    'Realizando': '🔵',
+                    'Concluído': '🟢'
+                }
+                emoji = status_color.get(move.get('status'), '⚪')
+                
+                with st.expander(f"{emoji} {move.get('time', 'N/A')} - {resident['name']} - OS #{move['id']}", expanded=True):
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.write(f"**Status:** {move.get('status', 'N/A')}")
+                        st.write(f"**Hora:** {move.get('time', 'N/A')}")
+                        st.write(f"**Volume:** {move.get('metragem', 0)} m³")
+                    
+                    with col2:
+                        origin = resident.get('originAddress', 'N/A')
+                        if resident.get('originNumber'):
+                            origin += f", {resident['originNumber']}"
+                        st.write(f"**Origem:** {origin}")
+                        
+                        dest = resident.get('destAddress', 'N/A')
+                        if resident.get('destNumber'):
+                            dest += f", {resident['destNumber']}"
+                        st.write(f"**Destino:** {dest}")
+                    
+                    with col3:
+                        st.write(f"**Contato:** {resident.get('contact', 'N/A')}")
+                        
+                        # Equipe
+                        staff_data = st.session_state.data.get('staff', [])
+                        if move.get('supervisorId') or move.get('supervisorid'):
+                            sup_id = move.get('supervisorId') or move.get('supervisorid')
+                            sup = next((s for s in staff_data if s['id'] == sup_id), None)
+                            if sup:
+                                st.write(f"**Supervisor:** {sup['name']}")
+                        
+                        if move.get('driverId') or move.get('driverid'):
+                            drv_id = move.get('driverId') or move.get('driverid')
+                            drv = next((s for s in staff_data if s['id'] == drv_id), None)
+                            if drv:
+                                st.write(f"**Motorista:** {drv['name']}")
 
 def render_list_view(moves):
     """Visualização em lista"""
@@ -428,8 +502,9 @@ def render_list_view(moves):
     st.subheader(f"📋 {len(moves_sorted)} Mudanças Agendadas")
     
     for move in moves_sorted:
-        # Buscar resident
-        resident = next((r for r in all_residents if r['id'] == move.get('residentId')), None)
+        # Buscar resident (ambos formatos de ID)
+        resident = next((r for r in all_residents if r['id'] == move.get('residentId') 
+                        or r['id'] == move.get('residentid')), None)
         
         if resident:
             status_emoji = {
@@ -1419,8 +1494,10 @@ def residents_form():
                         st.markdown("**🗑️ Excluir**")
                         st.caption("⚠️ Ação irreversível!")
                         
-                        # Verificar se tem OSs vinculadas ANTES do botão
-                        moves_vinculadas = [m for m in st.session_state.data['moves'] if m.get('residentId') == resident['id']]
+                        # Verificar se tem OSs vinculadas ANTES do botão (ambos formatos)
+                        moves_vinculadas = [m for m in st.session_state.data['moves'] 
+                                          if m.get('residentId') == resident['id'] 
+                                          or m.get('residentid') == resident['id']]
                         
                         if moves_vinculadas:
                             # TEM OSs - mostrar bloqueio
