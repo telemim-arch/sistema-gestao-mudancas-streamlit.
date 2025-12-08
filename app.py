@@ -1694,10 +1694,28 @@ def staff_management():
         email = st.text_input("Login (Email)", placeholder="exemplo@telemim.com")
         password = st.text_input("Senha", type="password", placeholder="Deixe vazio para senha padrão: 123")
         
-        role_map = {r['name']: r for r in st.session_state.data['roles'] if r['permission'] not in ['ADMIN', 'SECRETARY']}
-        role_name = st.selectbox("Cargo", list(role_map.keys()))
-        
+        # Cargos fixos do sistema
         user = st.session_state.user
+        
+        if user['role'] == 'ADMIN':
+            # Admin pode criar qualquer cargo
+            cargos_disponiveis = {
+                "Coordenador": "COORDINATOR",
+                "Supervisor": "SUPERVISOR",
+                "Motorista": "DRIVER",
+                "Secretária": "SECRETARY"
+            }
+        else:
+            # Secretária só pode criar Coordenador, Supervisor e Motorista
+            cargos_disponiveis = {
+                "Coordenador": "COORDINATOR",
+                "Supervisor": "SUPERVISOR",
+                "Motorista": "DRIVER"
+            }
+        
+        role_name = st.selectbox("Cargo", list(cargos_disponiveis.keys()))
+        role_permission = cargos_disponiveis[role_name]
+        
         sec_id = None
         if user['role'] == 'ADMIN':
             secs = [s for s in st.session_state.data['staff'] if s['role'] == 'SECRETARY']
@@ -1716,7 +1734,6 @@ def staff_management():
         
         if submit:
             if name and email:
-                role_permission = role_map[role_name]['permission']
                 if insert_staff(name, email, password or '123', role_permission, role_name, sec_id):
                     # Atualizar dados
                     st.session_state.data = fetch_all_data()
