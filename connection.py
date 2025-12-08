@@ -125,11 +125,14 @@ def fetch_all_data():
             df = pd.DataFrame(cur.fetchall(), columns=columns)
             data['moves'] = df.where(pd.notnull(df), None).to_dict('records')
             
-            # Secretaries
-            cur.execute("SELECT * FROM secretaries")
-            columns = [desc[0] for desc in cur.description]
-            df = pd.DataFrame(cur.fetchall(), columns=columns)
-            data['secretaries'] = df.where(pd.notnull(df), None).to_dict('records')
+            # Secretaries (tentar buscar, se não existir retornar vazio)
+            try:
+                cur.execute("SELECT * FROM secretaries")
+                columns = [desc[0] for desc in cur.description]
+                df = pd.DataFrame(cur.fetchall(), columns=columns)
+                data['secretaries'] = df.where(pd.notnull(df), None).to_dict('records')
+            except:
+                data['secretaries'] = []
             
             # Roles
             cur.execute("SELECT * FROM roles")
@@ -176,8 +179,24 @@ def authenticate_user(email, password):
 
 # --- STAFF ---
 
-def insert_staff(staff_data):
-    """Insere funcionário"""
+def insert_staff(staff_data_or_name, email=None, password=None, role=None, jobTitle=None, secretaryId=None, branchName=None):
+    """Insere funcionário - aceita dict ou parâmetros individuais"""
+    
+    # Se recebeu dict
+    if isinstance(staff_data_or_name, dict):
+        staff_data = staff_data_or_name
+    else:
+        # Se recebeu parâmetros individuais (compatibilidade com código antigo)
+        staff_data = {
+            'name': staff_data_or_name,
+            'email': email,
+            'password': password,
+            'role': role,
+            'jobTitle': jobTitle,
+            'secretaryId': secretaryId,
+            'branchName': branchName
+        }
+    
     query = """
         INSERT INTO staff (name, email, password, role, jobTitle, secretaryId, branchName)
         VALUES (%s, %s, %s, %s, %s, %s, %s)
